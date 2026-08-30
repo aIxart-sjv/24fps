@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
 
 
 class AdapterCapability(str, Enum):
@@ -45,6 +45,69 @@ class AdapterCapability(str, Enum):
     RECORDING_EXTRACTION = "recording_extraction"
     RECOVERY = "recovery"
     NATIVE_EXPORT_HANDLING = "native_export_handling"
+
+
+class SupportLevel(IntEnum):
+    """How much of a vendor's format an adapter actually implements
+    (Phase 19, Master Specification Section 17: "Vendor support is not
+    just a brand checkbox... capability reporting should be
+    model/firmware aware").
+
+    Ordered so a higher value always means more implemented, never a
+    claim of "brand support" by itself — `AdapterRegistry` selecting an
+    adapter (a vendor/model/firmware pattern match) says nothing about
+    which of these levels that adapter has actually reached; read
+    `DVRAdapter.support_level`/`.capabilities` for that.
+    """
+
+    #: Public information exists (research paper, vendor documentation,
+    #: third-party tool), but nothing in this codebase implements or
+    #: validates it. No adapter capability is ever declared at this level.
+    LEVEL_0_RESEARCH_ONLY = 0
+    #: The vendor/format can be recognized deterministically from a
+    #: documented, evidence-backed signature, but recording/index parsing
+    #: is not implemented.
+    LEVEL_1_DETECTION = 1
+    #: Storage/recording structure (index, channel, timestamp fields) can
+    #: be identified and parsed, but full media extraction is incomplete.
+    LEVEL_2_STRUCTURE_PARSING = 2
+    #: Recordings can be enumerated and extracted into standard media,
+    #: but this has not been validated against real or authoritative
+    #: controlled evidence for a defined model/firmware/format scope.
+    LEVEL_3_RECORDING_EXTRACTION = 3
+    #: Implementation has been tested against real or authoritative
+    #: controlled evidence for a defined model/firmware/format scope
+    #: (e.g. CP Plus's "ADIT-v1" signature, Phase 8).
+    LEVEL_4_VALIDATED = 4
+
+
+class EvidenceBasis(str, Enum):
+    """What kind of evidence backs a `DVRAdapter`'s declared
+    `support_level` (Phase 19 task scope: "For every vendor, explicitly
+    classify the evidence basis"). A single adapter may cite more than
+    one -- e.g. a public reference implementation *and* public format
+    documentation that independently corroborate each other."""
+
+    #: This project's own real, hash-verified evidence (e.g. CP Plus's
+    #: analyzed `.cpv` package).
+    REAL_PROJECT_EVIDENCE = "real_project_evidence"
+    #: An existing, inspected open-source parser/tool/library (license
+    #: reviewed) that independently implements/tests the format.
+    PUBLIC_REFERENCE_IMPLEMENTATION = "public_reference_implementation"
+    #: Published vendor documentation, peer-reviewed research, or a
+    #: reproducible technical writeup describing the format, without an
+    #: inspected reference implementation.
+    PUBLIC_FORMAT_DOCUMENTATION = "public_format_documentation"
+    #: Legally-usable public sample files were available and used.
+    PUBLIC_SAMPLE_DATA = "public_sample_data"
+    #: Only a synthetic fixture built from documented (not this
+    #: project's own) behavior was used -- never presented as validation
+    #: against real evidence.
+    SYNTHETIC_ONLY = "synthetic_only"
+    #: A reasoned hypothesis with no direct format documentation, sample,
+    #: or reference implementation backing it -- the weakest basis;
+    #: never sufficient alone to justify `LEVEL_1_DETECTION` or above.
+    INFERENCE = "inference"
 
 
 @dataclass(frozen=True)
@@ -149,6 +212,44 @@ class DVRAdapter(ABC):
         as plain metadata rather than a version-management subsystem.
         """
         raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def support_level(self) -> SupportLevel:
+        """How much of this vendor's format this adapter actually
+        implements (Phase 19). Mandatory and never defaulted: forcing
+        every adapter to state this explicitly is what prevents a
+        registered vendor name from silently reading as "supported"."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def evidence_basis(self) -> tuple[EvidenceBasis, ...]:
+        """What kind of evidence backs `support_level` (Phase 19). Must
+        be non-empty; an adapter with nothing to cite belongs at
+        `SupportLevel.LEVEL_0_RESEARCH_ONLY` with `(EvidenceBasis.
+        PUBLIC_FORMAT_DOCUMENTATION,)` or `(EvidenceBasis.INFERENCE,)`,
+        whichever is honest, never an empty tuple standing in for "we
+        don't know why we believe this"."""
+        raise NotImplementedError
+
+    @property
+    def model_scope(self) -> str:
+        """Free-text description of exactly which model(s)/firmware
+        `support_level` applies to (Master Specification Section 17:
+        "Never report 'CP Plus fully supported' if only one model is
+        tested"). Defaults to an explicit "nothing validated" statement
+        rather than silence -- a subclass with real scope should always
+        override this."""
+        return "no specific model/firmware has been validated for this adapter"
+
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        """Free-text known limitations of this adapter's implementation
+        (Phase 19 task scope: support-matrix "Limitations" column).
+        Empty by default; a subclass with real limitations should always
+        override this rather than leaving them implicit."""
+        return ()
 
     def supports(self, capability: AdapterCapability) -> bool:
         """Return whether this adapter declares support for `capability`."""

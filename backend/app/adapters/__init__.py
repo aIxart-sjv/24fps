@@ -23,12 +23,15 @@ from app.adapters.base import (
     AdapterCapabilityNotImplementedError,
     AdapterResult,
     DVRAdapter,
+    EvidenceBasis,
+    SupportLevel,
 )
 from app.adapters.registry import (
     AdapterMatchAttempt,
     AdapterRegistry,
     AdapterSelectionResult,
     AdapterSelectionStatus,
+    AdapterSupportSummary,
     MatchStrength,
 )
 
@@ -40,6 +43,9 @@ __all__ = [
     "AdapterResult",
     "AdapterSelectionResult",
     "AdapterSelectionStatus",
+    "AdapterSupportSummary",
     "DVRAdapter",
+    "EvidenceBasis",
     "MatchStrength",
+    "SupportLevel",
 ]

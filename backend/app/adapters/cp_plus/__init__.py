@@ -47,7 +47,13 @@ import io
 from typing import IO
 
 from app.acquisition.storage_reader import EvidenceStorageReader
-from app.adapters.base import AdapterCapability, AdapterResult, DVRAdapter
+from app.adapters.base import (
+    AdapterCapability,
+    AdapterResult,
+    DVRAdapter,
+    EvidenceBasis,
+    SupportLevel,
+)
 from app.adapters.cp_plus.detector import DETECTION_HEADER_WINDOW, detect_cp_plus_structure
 from app.adapters.cp_plus.extraction import CPVExtractionResult
 from app.adapters.cp_plus.models import (
@@ -156,6 +162,36 @@ class CPPlusAdapter(DVRAdapter):
     def adapter_version(self) -> str:
         return PARSER_VERSION
 
+    @property
+    def support_level(self) -> SupportLevel:
+        # Phase 19: the only adapter in this codebase actually tested
+        # against real, hash-verified project evidence -- see this
+        # module's own CONTROLLED-EVIDENCE STATUS section above.
+        return SupportLevel.LEVEL_4_VALIDATED
+
+    @property
+    def evidence_basis(self) -> tuple[EvidenceBasis, ...]:
+        return (EvidenceBasis.REAL_PROJECT_EVIDENCE,)
+
+    @property
+    def model_scope(self) -> str:
+        return (
+            "validated only against CP-UNR-108F1 (hardware V1.0, firmware "
+            "V1.00.14.01.R) with camera CP-UNC-TA21L3C-LQ (CH1, 1920x1080, H.265, "
+            "continuous) -- see app.adapters.cp_plus.models module docstring"
+        )
+
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        return (
+            "raw CPV timestamp counter is preserved but not resolved to a usable "
+            "timestamp (see CPPlusRecordingRecord.timestamp_status)",
+            "deleted-recording search (find_deleted_recordings) is a real, tested, "
+            "but UNVALIDATED framework path -- no real deleted-record fixture exists",
+            "only the 'ADIT-v1' container signature is recognized; any other CP "
+            "Plus model/firmware/export tool reports UNSUPPORTED, never a guess",
+        )
+
     def _require_parser(self) -> CPPlusParser:
         if self._parser is None:
             raise ValueError(
@@ -262,9 +298,7 @@ class CPPlusAdapter(DVRAdapter):
             )
 
         sink = destination if destination is not None else io.BytesIO()
-        result = self._require_parser().extract_elementary_stream(
-            sink, segment_label=recording_id
-        )
+        result = self._require_parser().extract_elementary_stream(sink, segment_label=recording_id)
         return AdapterResult(
             vendor=self.vendor,
             model=None,

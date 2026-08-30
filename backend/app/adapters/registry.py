@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 
-from app.adapters.base import DVRAdapter
+from app.adapters.base import AdapterCapability, DVRAdapter, EvidenceBasis, SupportLevel
 from app.schemas.device import DeviceIdentificationResult, IdentificationStatus
 
 _GENERIC_MODEL_PATTERN = ".*"
@@ -65,6 +65,25 @@ class AdapterSelectionResult:
     adapter: DVRAdapter | None
     reason: str
     attempts: list[AdapterMatchAttempt] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class AdapterSupportSummary:
+    """One registered adapter's declared support, exactly as that adapter
+    reports it (Phase 19 task scope: "registry listing accurately
+    reports support levels/capabilities"). Never computed or inferred by
+    the registry itself -- every field here is read directly from the
+    adapter's own declarative properties."""
+
+    vendor: str
+    model_pattern: str
+    firmware_pattern: str | None
+    model_scope: str
+    support_level: SupportLevel
+    evidence_basis: tuple[EvidenceBasis, ...]
+    capabilities: frozenset[AdapterCapability]
+    limitations: tuple[str, ...]
+    adapter_version: str
 
 
 class AdapterRegistry:
@@ -116,6 +135,27 @@ class AdapterRegistry:
     def list_adapters(self) -> list[DVRAdapter]:
         """Return every registered adapter, in registration order."""
         return list(self._adapters)
+
+    def support_matrix(self) -> list[AdapterSupportSummary]:
+        """Return every registered adapter's declared support, in
+        registration order (Phase 19 task scope: "Create an explicit
+        support matrix"). A vendor with no registered adapter simply does
+        not appear here -- this never fabricates an entry for a vendor
+        nobody registered."""
+        return [
+            AdapterSupportSummary(
+                vendor=adapter.vendor,
+                model_pattern=adapter.model_pattern,
+                firmware_pattern=adapter.firmware_pattern,
+                model_scope=adapter.model_scope,
+                support_level=adapter.support_level,
+                evidence_basis=adapter.evidence_basis,
+                capabilities=adapter.capabilities,
+                limitations=adapter.limitations,
+                adapter_version=adapter.adapter_version,
+            )
+            for adapter in self._adapters
+        ]
 
     def find_matches(self, result: DeviceIdentificationResult) -> list[AdapterMatchAttempt]:
         """Evaluate every registered adapter against `result`.

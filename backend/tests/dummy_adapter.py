@@ -12,7 +12,7 @@ them, by design.
 
 from __future__ import annotations
 
-from app.adapters.base import AdapterCapability, DVRAdapter
+from app.adapters.base import AdapterCapability, DVRAdapter, EvidenceBasis, SupportLevel
 
 
 class DummyAdapter(DVRAdapter):
@@ -32,12 +32,16 @@ class DummyAdapter(DVRAdapter):
         firmware_pattern: str | None = None,
         capabilities: frozenset[AdapterCapability] = frozenset(),
         adapter_version: str = "0.0.1-test",
+        support_level: SupportLevel = SupportLevel.LEVEL_0_RESEARCH_ONLY,
+        evidence_basis: tuple[EvidenceBasis, ...] = (EvidenceBasis.INFERENCE,),
     ) -> None:
         self._vendor = vendor
         self._model_pattern = model_pattern
         self._firmware_pattern = firmware_pattern
         self._capabilities = capabilities
         self._adapter_version = adapter_version
+        self._support_level = support_level
+        self._evidence_basis = evidence_basis
 
     @property
     def vendor(self) -> str:
@@ -58,3 +62,11 @@ class DummyAdapter(DVRAdapter):
     @property
     def adapter_version(self) -> str:
         return self._adapter_version
+
+    @property
+    def support_level(self) -> SupportLevel:
+        return self._support_level
+
+    @property
+    def evidence_basis(self) -> tuple[EvidenceBasis, ...]:
+        return self._evidence_basis
