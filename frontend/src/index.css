@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Surfaces */
+  --color-background: #09090b;
+  --color-surface: #111113;
+  --color-surface-elevated: #18181b;
+  --color-surface-hover: #1c1c1f;
+
+  /* Borders */
+  --color-border: #27272a;
+  --color-border-strong: #3f3f46;
+
+  /* Text */
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #a1a1aa;
+  --color-fg-subtle: #71717a;
+
+  /* Accent */
+  --color-accent: #22d3ee;
+  --color-accent-dim: #0e7490;
+  --color-accent-fg: #083344;
+
+  /* Status */
+  --color-success: #22c55e;
+  --color-success-dim: #14532d;
+  --color-warning: #f59e0b;
+  --color-warning-dim: #78350f;
+  --color-critical: #ef4444;
+  --color-critical-dim: #7f1d1d;
+  --color-info: #3b82f6;
+  --color-info-dim: #1e3a8a;
+
+  /* Entry-experience identity (landing + login only) — additive, does not
+     replace the app's own --color-accent / font tokens used everywhere else. */
+  --color-forensic-red: #ac1e1a;
+  --color-forensic-red-deep: #5c0f0d;
+  --color-forensic-yellow: #f5c518;
+  --color-forensic-ink: #0a0a0a;
+
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-slide-in: slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scan-sweep: scan-sweep 6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(8px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes scan-sweep {
+    0% { transform: translateY(-10%); opacity: 0; }
+    8% { opacity: 0.5; }
+    50% { opacity: 0.5; }
+    92% { opacity: 0; }
+    100% { transform: translateY(110%); opacity: 0; }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Slim, understated scrollbars — this is a dense data application */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: 9999px;
+    border: 2px solid var(--color-background);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-fg-subtle);
+  }
+}
+
+@layer utilities {
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Subtle forensic data-field backdrop used on the landing page only */
+  .bg-forensic-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--color-border) 60%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--color-border) 60%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  /* Same grid motif, tuned for the red entry landing background */
+  .bg-forensic-grid-light {
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, white 12%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, white 12%, transparent) 1px, transparent 1px);
+    background-size: 42px 42px;
+  }
+
+  /* IBM Plex — used only on the landing and login entry pages */
+  .font-plex {
+    font-family: 'IBM Plex Sans', var(--font-sans);
+  }
+  .font-plex-mono {
+    font-family: 'IBM Plex Mono', var(--font-mono);
+  }
+}
