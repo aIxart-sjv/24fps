@@ -23,9 +23,11 @@ from sqlalchemy import text
 
 from app.api.routes import ai as ai_routes
 from app.api.routes import audit as audit_routes
+from app.api.routes import auth as auth_routes
 from app.api.routes import blockchain as blockchain_routes
 from app.api.routes import cases as cases_routes
 from app.api.routes import correlation as correlation_routes
+from app.api.routes import custody as custody_routes
 from app.api.routes import devices as devices_routes
 from app.api.routes import integrity as integrity_routes
 from app.api.routes import jobs as jobs_routes
@@ -35,6 +37,7 @@ from app.api.routes import reports as reports_routes
 from app.api.routes import system as system_routes
 from app.api.routes import timestamps as timestamps_routes
 from app.api.routes import validation as validation_routes
+from app.bootstrap import run_database_migrations
 from app.config import get_settings
 from app.logging.forensic_logger import get_logger
 from app.storage.db import engine
@@ -56,10 +59,16 @@ _LOCAL_DEV_ORIGINS: list[str] = [
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle events.
 
-    On startup this ensures all configured filesystem roots exist and
-    verifies the database engine can open a connection, failing fast
-    rather than allowing a partially functional backend to accept
-    forensic work. On shutdown, the database connection pool is disposed.
+    On startup this ensures all configured filesystem roots exist, brings
+    the database schema to the latest Alembic revision (Phase 20: a clean
+    installation -- including a packaged `.exe` an investigator never
+    runs `alembic` commands against directly -- must be able to
+    initialize/update its own database; `app.bootstrap.
+    run_database_migrations` never uses `Base.metadata.create_all()` as a
+    shortcut and never touches a historical migration file), and verifies
+    the database engine can open a connection, failing fast rather than
+    allowing a partially functional backend to accept forensic work. On
+    shutdown, the database connection pool is disposed.
 
     Args:
         app: The FastAPI application instance being started.
@@ -68,8 +77,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Control back to FastAPI for the duration it serves requests.
 
     Raises:
-        RuntimeError: If the database connection cannot be established
-            during the startup verification step.
+        RuntimeError: If migrations fail or the database connection
+            cannot be established during the startup verification step.
     """
     settings = get_settings()
     settings.ensure_directories()
@@ -82,6 +91,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             }
         },
     )
+
+    try:
+        run_database_migrations()
+    except Exception as exc:
+        logger.error(
+            "Database migration failed during startup",
+            extra={"forensic_context": {"error": str(exc)}},
+        )
+        raise RuntimeError("Backend failed to apply database migrations at startup.") from exc
 
     try:
         with engine.connect() as connection:
@@ -150,6 +168,8 @@ def create_app() -> FastAPI:
     application.include_router(audit_routes.router, prefix=API_V1_PREFIX, tags=["audit"])
     application.include_router(blockchain_routes.router, prefix=API_V1_PREFIX, tags=["blockchain"])
     application.include_router(reports_routes.router, prefix=API_V1_PREFIX, tags=["reports"])
+    application.include_router(auth_routes.router, prefix=API_V1_PREFIX, tags=["auth"])
+    application.include_router(custody_routes.router, prefix=API_V1_PREFIX, tags=["custody"])
 
     @application.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

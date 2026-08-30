@@ -80,6 +80,9 @@ def create_ai_job(request: AIJobCreateRequest, db: Session = Depends(get_db)) ->
             classes=request.classes,
             tracker=request.tracker,
             prefer_gpu=request.prefer_gpu,
+            frame_redundancy_enabled=request.frame_redundancy_enabled,
+            frame_redundancy_threshold=request.frame_redundancy_threshold,
+            frame_redundancy_max_skip_run=request.frame_redundancy_max_skip_run,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -24,6 +24,9 @@ without HTTP.
 from __future__ import annotations
 
 import json
+import statistics
+import time
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,13 @@ from sqlalchemy.orm import Session
 
 from app.ai.device import select_device
 from app.ai.face_detection import detect_faces
+from app.ai.frame_redundancy import (
+    FrameRedundancyConfig,
+    FrameRedundancyStats,
+    aggregate_stats as aggregate_frame_redundancy_stats,
+    evaluate_redundancy_sequence,
+    summarize as summarize_frame_redundancy,
+)
 from app.ai.frame_sampling import SamplingStrategy, select_frames
 from app.ai.model_registry import (
     ModelLoadResult,
@@ -70,6 +80,22 @@ _MODEL_LOADING_ANALYSIS_TYPES = frozenset(
     {AnalysisType.OBJECT_DETECTION, AnalysisType.OBJECT_TRACKING}
 )
 
+#: Default grayscale mean-absolute-difference threshold (0-255 scale) for
+#: frame-redundancy evaluation (Phase 21, Part B) -- deliberately
+#: conservative (a small, real change already exceeds it) since a
+#: false-positive skip of meaningful evidence is unacceptable while a
+#: false-negative (an unnecessary extra analysis) only costs compute.
+#: Always recorded on `Job.parameters`, never silently applied.
+DEFAULT_FRAME_REDUNDANCY_THRESHOLD = 3.0
+
+#: A frame's timestamp gap from the reference frame beyond this many
+#: multiples of the job's own actual sampling interval is treated as a
+#: possible seek/discontinuity (`AnalyzeReason.TIMESTAMP_DISCONTINUITY`)
+#: rather than an ordinary consecutive sampled frame. A multiplier of the
+#: job's real interval, not a fixed number of seconds, so it scales
+#: correctly whether the job sampled at 1 fps or 30 fps.
+_TIMESTAMP_DISCONTINUITY_INTERVAL_MULTIPLIER = 5.0
+
 
 class AIManager:
     """Service layer for running and querying AI analysis jobs."""
@@ -88,6 +114,9 @@ class AIManager:
         classes: list[str] | None = None,
         tracker: str = BYTETRACK_TRACKER,
         prefer_gpu: bool = True,
+        frame_redundancy_enabled: bool = False,
+        frame_redundancy_threshold: float = DEFAULT_FRAME_REDUNDANCY_THRESHOLD,
+        frame_redundancy_max_skip_run: int | None = None,
     ) -> Job:
         """Create and synchronously run one AI analysis job.
 
@@ -110,6 +139,18 @@ class AIManager:
             classes: Optional object-class allow-list.
             tracker: `app.ai.tracking.BYTETRACK_TRACKER` or `BOTSORT_TRACKER`.
             prefer_gpu: Use CUDA if available.
+            frame_redundancy_enabled: If `True`, skip object/face-
+                detection model inference on frames deemed redundant by
+                `app.ai.frame_redundancy` (Phase 21, Part B). Never
+                affects `OBJECT_TRACKING`/`MOTION_DETECTION`, which
+                always see every one of their own sampled frames --
+                see `app.ai.frame_redundancy`'s module docstring.
+                Defaults to `False`: existing behavior (every sampled
+                frame analyzed) is unchanged unless a caller opts in.
+            frame_redundancy_threshold: See
+                `app.ai.frame_redundancy.FrameRedundancyConfig.threshold`.
+            frame_redundancy_max_skip_run: See
+                `app.ai.frame_redundancy.FrameRedundancyConfig.max_skip_run`.
 
         Returns:
             The finished `Job` (`COMPLETED`, `PARTIAL`, or `FAILED`).
@@ -136,6 +177,9 @@ class AIManager:
             "classes": classes,
             "tracker": tracker,
             "prefer_gpu": prefer_gpu,
+            "frame_redundancy_enabled": frame_redundancy_enabled,
+            "frame_redundancy_threshold": frame_redundancy_threshold,
+            "frame_redundancy_max_skip_run": frame_redundancy_max_skip_run,
         }
 
         job = JobManager.create_job(
@@ -176,9 +220,10 @@ class AIManager:
         results_count = 0
         recordings_succeeded = 0
         recordings_failed = 0
+        redundancy_stats_by_recording: list[FrameRedundancyStats] = []
 
         for recording_id in recording_ids:
-            outcome_warnings, outcome_results = AIManager._process_recording(
+            outcome_warnings, outcome_results, redundancy_stats = AIManager._process_recording(
                 db,
                 job=job,
                 case_id=case_id,
@@ -193,9 +238,14 @@ class AIManager:
                 face_confidence_threshold=face_confidence_threshold,
                 classes=classes,
                 tracker=tracker,
+                frame_redundancy_enabled=frame_redundancy_enabled,
+                frame_redundancy_threshold=frame_redundancy_threshold,
+                frame_redundancy_max_skip_run=frame_redundancy_max_skip_run,
             )
             warnings.extend(outcome_warnings)
             results_count += outcome_results
+            if redundancy_stats is not None:
+                redundancy_stats_by_recording.append(redundancy_stats)
             if outcome_results > 0 or not outcome_warnings:
                 recordings_succeeded += 1
             else:
@@ -210,6 +260,13 @@ class AIManager:
         else:
             status = JobStatus.COMPLETED
             error = None
+
+        if redundancy_stats_by_recording:
+            aggregated = aggregate_frame_redundancy_stats(redundancy_stats_by_recording)
+            if aggregated is not None:
+                parameters["frame_redundancy_stats"] = aggregated.as_dict()
+                job.parameters = json.dumps(parameters)
+                db.add(job)
 
         return JobManager.finish_job(
             db,
@@ -270,8 +327,13 @@ class AIManager:
         face_confidence_threshold: float,
         classes: list[str] | None,
         tracker: str,
-    ) -> tuple[list[str], int]:
-        """Process one recording. Returns `(warnings, results_created)`.
+        frame_redundancy_enabled: bool = False,
+        frame_redundancy_threshold: float = DEFAULT_FRAME_REDUNDANCY_THRESHOLD,
+        frame_redundancy_max_skip_run: int | None = None,
+    ) -> tuple[list[str], int, FrameRedundancyStats | None]:
+        """Process one recording. Returns `(warnings, results_created,
+        frame_redundancy_stats)` -- the third element is `None` unless
+        frame-redundancy optimization actually ran for this recording.
 
         Never raises for an ordinary per-recording problem (missing
         recording, missing artifact, decoder failure, empty recording,
@@ -281,29 +343,33 @@ class AIManager:
         """
         warnings: list[str] = []
         if not requested_types:
-            return warnings, 0
+            return warnings, 0, None
 
         recording = db.query(Recording).filter(Recording.id == recording_id).first()
         if recording is None:
-            return [f"recording {recording_id}: not found"], 0
+            return [f"recording {recording_id}: not found"], 0, None
 
         artifact = AIManager._resolve_source_artifact(db, recording)
         if artifact is None:
-            return [f"recording {recording_id}: no derived artifact available"], 0
+            return [f"recording {recording_id}: no derived artifact available"], 0, None
 
         artifact_path = Path(artifact.path)
         if not artifact_path.is_file():
-            return [f"recording {recording_id}: source artifact file missing on disk"], 0
+            return [f"recording {recording_id}: source artifact file missing on disk"], 0, None
 
         capture = cv2.VideoCapture(str(artifact_path))
         try:
             if not capture.isOpened():
-                return [f"recording {recording_id}: failed to open video (decoder failure)"], 0
+                return (
+                    [f"recording {recording_id}: failed to open video (decoder failure)"],
+                    0,
+                    None,
+                )
 
             frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
             source_fps = float(capture.get(cv2.CAP_PROP_FPS))
             if frame_count <= 0 or source_fps <= 0:
-                return [f"recording {recording_id}: empty or invalid recording"], 0
+                return [f"recording {recording_id}: empty or invalid recording"], 0, None
 
             try:
                 strategy = SamplingStrategy(sampling_strategy)
@@ -314,7 +380,7 @@ class AIManager:
                     value=sampling_value,
                 )
             except ValueError as exc:
-                return [f"recording {recording_id}: {exc}"], 0
+                return [f"recording {recording_id}: {exc}"], 0, None
 
             samples: list[tuple[int, float, Any]] = []
             for selection in selections:
@@ -332,7 +398,7 @@ class AIManager:
 
         if not samples:
             warnings.append(f"recording {recording_id}: no frames could be decoded")
-            return warnings, 0
+            return warnings, 0, None
 
         results_created = 0
 
@@ -368,8 +434,48 @@ class AIManager:
             )
             results_created += created
 
+        # Frame-redundancy optimization (Phase 21, Part B) applies ONLY
+        # to the two plain per-frame model-inference loops below --
+        # never to tracking (already handled above) or motion detection
+        # (below), both of which need every one of their own sampled
+        # frames for correct internal continuity/differencing. Tracking
+        # and plain object detection are already mutually exclusive
+        # (`run_plain_detection` above), so this can never conflict with
+        # tracking. Computed at most once per recording and reused for
+        # both loops -- the frame content being compared is identical
+        # regardless of which detector will run on it.
+        will_run_face_detection = (
+            AnalysisType.FACE_DETECTION in requested_types and face_model is not None
+        )
+        redundancy_decisions: list[Any] | None = None
+        redundancy_stats: FrameRedundancyStats | None = None
+        if frame_redundancy_enabled and (
+            (run_plain_detection and object_model is not None) or will_run_face_detection
+        ):
+            redundancy_config = FrameRedundancyConfig(
+                threshold=frame_redundancy_threshold,
+                max_skip_run=frame_redundancy_max_skip_run,
+                max_timestamp_gap_seconds=AIManager._derive_max_timestamp_gap_seconds(selections),
+            )
+            comparison_started = time.perf_counter()
+            redundancy_decisions = evaluate_redundancy_sequence(samples, redundancy_config)
+            comparison_elapsed = time.perf_counter() - comparison_started
+            redundancy_stats = summarize_frame_redundancy(
+                redundancy_decisions,
+                threshold=frame_redundancy_threshold,
+                comparison_time_seconds=comparison_elapsed,
+            )
+
+        analyze_by_frame_number: dict[int, bool] = (
+            {d.frame_number: d.analyze for d in redundancy_decisions}
+            if redundancy_decisions is not None
+            else {}
+        )
+
         if run_plain_detection and object_model is not None:
             for frame_number, timestamp_seconds, frame in samples:
+                if not analyze_by_frame_number.get(frame_number, True):
+                    continue
                 detections = detect_objects(
                     object_model.model,
                     frame,
@@ -392,8 +498,10 @@ class AIManager:
                     base_timestamp=base_timestamp,
                 )
 
-        if AnalysisType.FACE_DETECTION in requested_types and face_model is not None:
+        if will_run_face_detection and face_model is not None:
             for frame_number, timestamp_seconds, frame in samples:
+                if not analyze_by_frame_number.get(frame_number, True):
+                    continue
                 detections = detect_faces(
                     face_model.model,
                     frame,
@@ -429,7 +537,7 @@ class AIManager:
                 base_timestamp=base_timestamp,
             )
 
-        return warnings, results_created
+        return warnings, results_created, redundancy_stats
 
     @staticmethod
     def _resolve_source_artifact(db: Session, recording: Recording) -> Artifact | None:
@@ -456,6 +564,37 @@ class AIManager:
         if artifact_id is None:
             return None
         return db.query(Artifact).filter(Artifact.id == artifact_id).first()
+
+    @staticmethod
+    def _derive_max_timestamp_gap_seconds(selections: Sequence[Any]) -> float | None:
+        """Derive `FrameRedundancyConfig.max_timestamp_gap_seconds` from
+        this job's own actual sampling interval, rather than hardcoding
+        one fixed number of seconds for every job regardless of its
+        sampling rate.
+
+        Uses the median gap between consecutive selected timestamps (the
+        job's typical interval), scaled by
+        `_TIMESTAMP_DISCONTINUITY_INTERVAL_MULTIPLIER` -- a gap that many
+        times larger than normal is treated as a possible seek/
+        discontinuity in the source rather than an ordinary consecutive
+        sampled frame.
+
+        Returns `None` (disabling the check) when fewer than two
+        selections exist or the derived interval is non-positive.
+        """
+        if len(selections) < 2:
+            return None
+        gaps = [
+            b.timestamp_seconds - a.timestamp_seconds
+            for a, b in zip(selections, selections[1:], strict=False)
+        ]
+        positive_gaps = [gap for gap in gaps if gap > 0]
+        if not positive_gaps:
+            return None
+        typical_interval = float(statistics.median(positive_gaps))
+        if typical_interval <= 0:
+            return None
+        return typical_interval * _TIMESTAMP_DISCONTINUITY_INTERVAL_MULTIPLIER
 
     @staticmethod
     def _camera_id_for(recording: Recording) -> str | None:

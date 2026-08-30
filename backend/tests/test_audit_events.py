@@ -24,6 +24,9 @@ def test_processing_operation_matches_the_documented_vocabulary() -> None:
         # Phase 18: assembling/rendering a standardized report (Master
         # Specification Section 50's job-type vocabulary).
         "report",
+        # Phase 21: a completed physical evidence custody handoff
+        # (QR-based chain of custody).
+        "physical_custody_transfer",
     }
     assert {op.value for op in ProcessingOperation} == expected
 

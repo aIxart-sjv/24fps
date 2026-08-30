@@ -44,6 +44,13 @@ class ProcessingOperation(str, Enum):
     #: vocabulary lists "report"). Recording this never reimplements
     #: report generation -- `app.core.report_manager.ReportManager` does.
     REPORT = "report"
+    #: Phase 21: a completed physical evidence custody handoff (QR-based
+    #: chain of custody). Recorded once per *completed* transfer only --
+    #: never for a still-`PENDING` one -- by `app.core.custody_manager.
+    #: CustodyManager`, which owns physical custody state; this value only
+    #: lets that completion appear in the existing Phase 15/16 audit
+    #: chain, it never reimplements hashing/chaining/verification.
+    PHYSICAL_CUSTODY_TRANSFER = "physical_custody_transfer"
 
 
 class ActorType(str, Enum):

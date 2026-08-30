@@ -45,6 +45,38 @@ class AIJobCreateRequest(BaseModel):
         "bytetrack.yaml"
     )
     prefer_gpu: Annotated[bool, Field(description="Use CUDA if available")] = True
+    frame_redundancy_enabled: Annotated[
+        bool,
+        Field(
+            description=(
+                "Phase 21: skip object/face-detection model inference on frames deemed "
+                "redundant (app.ai.frame_redundancy). Never affects object_tracking or "
+                "motion_detection. Off by default -- every sampled frame is analyzed "
+                "unless explicitly opted in."
+            )
+        ),
+    ] = False
+    frame_redundancy_threshold: Annotated[
+        float,
+        Field(
+            description=(
+                "Grayscale mean absolute difference (0-255 scale) at/under which a frame "
+                "is a redundancy candidate. Only meaningful when frame_redundancy_enabled."
+            ),
+            ge=0,
+            le=255,
+        ),
+    ] = 3.0
+    frame_redundancy_max_skip_run: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Optional periodic safety net: force-analyze after this many consecutive "
+                "skipped frames, regardless of difference score. None disables it."
+            ),
+            ge=1,
+        ),
+    ] = None
 
 
 class BoundingBoxResponse(BaseModel):

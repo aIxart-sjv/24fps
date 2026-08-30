@@ -110,9 +110,20 @@ def get_system_capabilities() -> SystemCapabilitiesResponse:
     """Report which high-level backend subsystems are currently wired up.
 
     Reflects development-order progress (Master Specification Section
-    89) rather than forensic capability, so the frontend/desktop shell
-    can detect which API surfaces are safe to call during incremental
-    development.
+    89) rather than per-vendor forensic capability, so the frontend/
+    desktop shell can detect which API surfaces are safe to call.
+    Distinct from `AdapterRegistry.support_matrix()` (Phase 19), which
+    reports per-vendor/model/firmware support level -- this endpoint only
+    reports whether a backend subsystem exists at all.
+
+    Kept in sync by hand at each phase boundary (Phase 20: corrected
+    against actual Phase 1-19 status -- this list had silently drifted
+    stale, still reporting every subsystem through "reporting" as
+    `implemented=False` despite Phases 4-18 having implemented them; an
+    inaccurate status/capability endpoint is exactly the kind of
+    "unsupported capability falsely advertised" (task Phase 20 scope
+    section 35) this phase must not leave in place, even though nothing
+    about the underlying subsystems themselves changed).
 
     Returns:
         A `SystemCapabilitiesResponse` enumerating known backend
@@ -131,23 +142,33 @@ def get_system_capabilities() -> SystemCapabilitiesResponse:
         ),
         SubsystemCapability(
             name="case_management",
-            implemented=False,
-            notes="Domain models and routes not yet implemented.",
+            implemented=True,
+            notes="Case CRUD (Phase 2/4).",
         ),
         SubsystemCapability(
             name="evidence_management",
-            implemented=False,
-            notes="Domain models and routes not yet implemented.",
+            implemented=True,
+            notes="Evidence registration, artifacts, native export (Phase 4).",
         ),
         SubsystemCapability(
             name="vendor_adapters",
-            implemented=False,
-            notes="Adapter directory scaffolding only; no parsers implemented.",
+            implemented=True,
+            notes=(
+                "DVRAdapter/AdapterRegistry framework (Phase 7); CP Plus validated "
+                "against real evidence (Phase 8, LEVEL_4); Dahua/Hikvision detection-only "
+                "(Phase 19, LEVEL_1); Honeywell/Uniview/TP-Link/Godrej/Matrix research-only "
+                "(Phase 19, LEVEL_0) -- see GET /api/v1/cases/{case_id}/audit for per-case "
+                "history; no dedicated adapter-listing route exists."
+            ),
         ),
         SubsystemCapability(
             name="acquisition",
-            implemented=False,
-            notes="StorageAccess interface defined; no acquisition logic yet.",
+            implemented=True,
+            notes=(
+                "RAW/DD + native export + E01 (pyewf, optional) on Linux; "
+                "WindowsStorageAccess remains an interface stub -- native Windows physical-"
+                "drive acquisition is NOT implemented (see Phase 20 final report)."
+            ),
         ),
         SubsystemCapability(
             name="integrity_hashing",
@@ -155,19 +176,47 @@ def get_system_capabilities() -> SystemCapabilitiesResponse:
             notes="SHA-256 + MD5 evidence hashing, storage, and verification.",
         ),
         SubsystemCapability(
+            name="recording_extraction",
+            implemented=True,
+            notes="CP Plus recording enumeration + FFmpeg-based extraction (Phase 9).",
+        ),
+        SubsystemCapability(
             name="recovery",
-            implemented=False,
-            notes="Not yet implemented.",
+            implemented=True,
+            notes="Layered recovery engine (Phase 10); validated only for CP Plus.",
+        ),
+        SubsystemCapability(
+            name="timeline_correlation",
+            implemented=True,
+            notes="Timestamp normalization, canonical timeline, cross-camera correlation "
+            "(Phase 11/12).",
         ),
         SubsystemCapability(
             name="ai_analytics",
-            implemented=False,
-            notes="Not yet implemented.",
+            implemented=True,
+            notes="Object/face/motion detection + tracking (Phase 13); model weights "
+            "download on first use into AI_MODEL_ROOT.",
+        ),
+        SubsystemCapability(
+            name="validation",
+            implemented=True,
+            notes="Ground-truth metric engine (Phase 14).",
+        ),
+        SubsystemCapability(
+            name="provenance_audit",
+            implemented=True,
+            notes="Processing history + hash-linked audit chain (Phase 15/16).",
+        ),
+        SubsystemCapability(
+            name="blockchain_anchoring",
+            implemented=True,
+            notes="Local/test provider only by default (BLOCKCHAIN_PROVIDER=none "
+            "disables it); no real network integration exists (Phase 17).",
         ),
         SubsystemCapability(
             name="reporting",
-            implemented=False,
-            notes="Not yet implemented.",
+            implemented=True,
+            notes="Standardized JSON + PDF report generation (Phase 18).",
         ),
     ]
     return SystemCapabilitiesResponse(subsystems=subsystems)

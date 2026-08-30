@@ -79,6 +79,14 @@ class Settings(BaseSettings):
             backend may spawn for CPU-heavy forensic operations.
         log_level: Minimum severity level emitted by the application
             logger.
+        host: Interface the packaged/standalone entry point binds
+            uvicorn to. Loopback-only by default.
+        port: TCP port the packaged/standalone entry point binds
+            uvicorn to.
+        auth_session_ttl_minutes: Minutes an authenticated login session
+            remains valid before re-authentication is required.
+        custody_token_ttl_minutes: Minutes a QR physical-custody handoff
+            token remains valid before it expires unaccepted.
     """
 
     model_config = SettingsConfigDict(
@@ -112,6 +120,28 @@ class Settings(BaseSettings):
 
     max_workers: int = Field(default=4, ge=1, le=64)
     log_level: LogLevel = Field(default=LogLevel.INFO)
+
+    #: Phase 20: the packaged entry point (`run.py`) needs an explicit
+    #: bind host/port -- previously only ever set ad hoc on the `uvicorn`
+    #: CLI in development. Defaults match uvicorn's own defaults and
+    #: Master Specification Section 64's localhost-only API design; never
+    #: `0.0.0.0` by default (a single-investigator local forensic
+    #: workstation tool has no reason to bind beyond loopback unless an
+    #: operator explicitly opts in).
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=8000, ge=1, le=65535)
+
+    #: Phase 21: how long an authenticated login session (`UserSession`)
+    #: remains valid before it must be re-issued. Deliberately short --
+    #: "short-lived authenticated session" is an explicit task
+    #: requirement, not a general-purpose long-lived API key.
+    auth_session_ttl_minutes: int = Field(default=60, ge=1, le=1440)
+
+    #: Phase 21: how long a QR custody-handoff token remains valid before
+    #: it expires unaccepted. Deliberately short -- a token left valid
+    #: for days would widen the window for a lost/stolen printout to be
+    #: scanned by the wrong person.
+    custody_token_ttl_minutes: int = Field(default=30, ge=1, le=1440)
 
     @field_validator(
         "evidence_root",
