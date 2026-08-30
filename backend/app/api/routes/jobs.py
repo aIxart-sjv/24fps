@@ -32,6 +32,7 @@ def _job_response(job: Job) -> JobResponse:
         id=job.id,
         case_id=job.case_id,
         evidence_id=job.evidence_id,
+        parent_job_id=job.parent_job_id,
         job_type=job.job_type,
         status=job.status,
         progress=job.progress,

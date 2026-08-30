@@ -103,6 +103,7 @@ def test_render_json_is_valid_json_with_expected_top_level_keys() -> None:
         "provenance",
         "audit",
         "blockchain",
+        "findings",
         "limitations",
     }
 

@@ -51,6 +51,18 @@ class ProcessingOperation(str, Enum):
     #: lets that completion appear in the existing Phase 15/16 audit
     #: chain, it never reimplements hashing/chaining/verification.
     PHYSICAL_CUSTODY_TRANSFER = "physical_custody_transfer"
+    #: Phase 22: one controlled, automatic case-processing run performed by
+    #: `app.core.processing_orchestrator.ProcessingOrchestrator` (the root
+    #: run, or one of its dependency-tracked pipeline stages). Recording
+    #: this never reimplements any of the phases it coordinates -- it only
+    #: records that the orchestrator invoked them and what happened.
+    ORCHESTRATION = "orchestration"
+    #: Phase 22: the findings engine (`app.core.findings_engine.
+    #: FindingsEngine`) generating or updating a structured `Finding` from
+    #: an already-computed result. Distinct from `ORCHESTRATION` so a
+    #: case's audit history can distinguish "a pipeline stage ran" from
+    #: "that stage's result was judged worth an examiner's attention".
+    FINDING_GENERATION = "finding_generation"
 
 
 class ActorType(str, Enum):

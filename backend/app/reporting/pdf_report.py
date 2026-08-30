@@ -153,6 +153,7 @@ def render_pdf(data: ReportData) -> bytes:
     _render_provenance_section(story, data)
     _render_audit_section(story, data)
     _render_blockchain_section(story, data)
+    _render_findings_section(story, data)
     _render_limitations_section(story, data)
 
     doc.build(story)
@@ -600,8 +601,35 @@ def _render_blockchain_section(story: list[object], data: ReportData) -> None:
     )
 
 
+def _render_findings_section(story: list[object], data: ReportData) -> None:
+    story.append(_section_heading("14. Findings"))
+    if not data.findings:
+        story.append(_empty_notice("No findings were generated for this case."))
+        return
+    rows = [
+        [
+            f.finding_id,
+            f.finding_type,
+            f.severity.upper(),
+            f.confidence,
+            f.status,
+            f.title,
+        ]
+        for f in data.findings
+    ]
+    story.append(_table(["ID", "Type", "Severity", "Confidence", "Status", "Title"], rows))
+    story.append(
+        _p(
+            "Severity describes review urgency, not certainty or guilt. A finding is an "
+            "observation or analytical result for examiner review, never an automatic "
+            "conclusion about tampering, identity, or intent.",
+            _SMALL_STYLE,
+        )
+    )
+
+
 def _render_limitations_section(story: list[object], data: ReportData) -> None:
-    story.append(_section_heading("14. Limitations"))
+    story.append(_section_heading("15. Limitations"))
     if not data.limitations:
         story.append(_empty_notice("No limitations were identified for this report's content."))
         return

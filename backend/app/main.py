@@ -29,8 +29,11 @@ from app.api.routes import cases as cases_routes
 from app.api.routes import correlation as correlation_routes
 from app.api.routes import custody as custody_routes
 from app.api.routes import devices as devices_routes
+from app.api.routes import findings as findings_routes
 from app.api.routes import integrity as integrity_routes
 from app.api.routes import jobs as jobs_routes
+from app.api.routes import notifications as notifications_routes
+from app.api.routes import processing as processing_routes
 from app.api.routes import recordings as recordings_routes
 from app.api.routes import recovery as recovery_routes
 from app.api.routes import reports as reports_routes
@@ -170,6 +173,11 @@ def create_app() -> FastAPI:
     application.include_router(reports_routes.router, prefix=API_V1_PREFIX, tags=["reports"])
     application.include_router(auth_routes.router, prefix=API_V1_PREFIX, tags=["auth"])
     application.include_router(custody_routes.router, prefix=API_V1_PREFIX, tags=["custody"])
+    application.include_router(processing_routes.router, prefix=API_V1_PREFIX, tags=["processing"])
+    application.include_router(findings_routes.router, prefix=API_V1_PREFIX, tags=["findings"])
+    application.include_router(
+        notifications_routes.router, prefix=API_V1_PREFIX, tags=["notifications"]
+    )
 
     @application.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

@@ -218,5 +218,19 @@ def get_system_capabilities() -> SystemCapabilitiesResponse:
             implemented=True,
             notes="Standardized JSON + PDF report generation (Phase 18).",
         ),
+        SubsystemCapability(
+            name="physical_custody_auth",
+            implemented=True,
+            notes="User accounts/sessions + QR-based physical evidence custody (Phase 21).",
+        ),
+        SubsystemCapability(
+            name="automatic_processing_findings",
+            implemented=True,
+            notes=(
+                "Controlled automatic case-processing orchestration, structured findings, "
+                "and officer notifications (Phase 22); reuses the Phase 13 job system and "
+                "Phase 15/16 provenance/audit chain rather than a second mechanism."
+            ),
+        ),
     ]
     return SystemCapabilitiesResponse(subsystems=subsystems)

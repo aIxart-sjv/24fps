@@ -18,6 +18,7 @@ class JobResponse(BaseModel):
     id: int
     case_id: int
     evidence_id: int | None
+    parent_job_id: int | None
     job_type: str
     status: str
     progress: float | None

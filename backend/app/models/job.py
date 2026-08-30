@@ -50,6 +50,17 @@ class JobStatus(str, Enum):
     """Explicit job-processing states (task Phase 13 scope's own
     vocabulary). `PARTIAL` exists specifically so a job that processed
     some but not all requested work is never misreported as `COMPLETED`.
+
+    `SKIPPED`/`BLOCKED`/`REQUIRES_REVIEW` are Phase 22 additions (Master
+    Specification Section 22 task scope, "Job Dependency Model": jobs must
+    be able to expose these states honestly) -- `PENDING` already covers
+    "queued" for the AI/report job types Phase 13/18 introduced, so no
+    separate `QUEUED` value was added. `SKIPPED` means a step was not
+    applicable given upstream results (e.g. no camera to correlate);
+    `BLOCKED` means a step could not run because a dependency it needs
+    did not itself complete successfully; `REQUIRES_REVIEW` means the
+    step is examiner-controlled and was deliberately not run
+    automatically (e.g. no ground-truth dataset configured).
     """
 
     PENDING = "pending"
@@ -57,6 +68,9 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"
     PARTIAL = "partial"
     FAILED = "failed"
+    SKIPPED = "skipped"
+    BLOCKED = "blocked"
+    REQUIRES_REVIEW = "requires_review"
 
 
 #: `job_type` value this phase writes. A plain string column (not a DB
@@ -70,6 +84,16 @@ AI_JOB_TYPE = "ai"
 #: vocabulary lists "report". This module's own docstring already
 #: anticipated a future reporting phase reusing this generic job layer.
 REPORT_JOB_TYPE = "report"
+
+#: `job_type` value Phase 22's `app.core.processing_orchestrator.
+#: ProcessingOrchestrator` writes for the root, case-scoped orchestration
+#: run. Individual pipeline stages it drives (identification, enumeration,
+#: extraction, recovery, timestamp_normalization, timeline, correlation,
+#: validation) are plain, self-describing `job_type` strings defined in
+#: that module -- not enumerated here, matching this column's own
+#: documented "unknown values must be explicit, not fabricated" design
+#: (this module's docstring) rather than a second closed vocabulary.
+ORCHESTRATION_JOB_TYPE = "orchestration"
 
 
 class Job(Base):
@@ -92,6 +116,16 @@ class Job(Base):
     )
     evidence_id: Mapped[int | None] = mapped_column(
         ForeignKey("evidence.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    #: Phase 22 addition: links a pipeline-stage job to the root
+    #: orchestration `Job` that scheduled it, forming the dependency tree
+    #: `ProcessingOrchestrator` builds (Master Specification Section 22
+    #: task scope, "Job Dependency Model"). `NULL` for every job type
+    #: Phases 13/18 already write (`"ai"`, `"report"`) when created
+    #: directly through their own routes rather than via the
+    #: orchestrator -- this column is purely additive and never required.
+    parent_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True, index=True
     )
     job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=JobStatus.PENDING.value)
@@ -120,6 +154,8 @@ class Job(Base):
 
     case: Mapped[Case] = relationship("Case", back_populates="jobs")
     evidence: Mapped[Evidence | None] = relationship("Evidence")
+    parent_job: Mapped[Job | None] = relationship("Job", remote_side=[id], back_populates="child_jobs")
+    child_jobs: Mapped[list[Job]] = relationship("Job", back_populates="parent_job")
 
     def __repr__(self) -> str:
         return f"<Job id={self.id!r} job_type={self.job_type!r} status={self.status!r}>"

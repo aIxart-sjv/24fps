@@ -27,6 +27,10 @@ def test_processing_operation_matches_the_documented_vocabulary() -> None:
         # Phase 21: a completed physical evidence custody handoff
         # (QR-based chain of custody).
         "physical_custody_transfer",
+        # Phase 22: one automatic case-processing orchestration run.
+        "orchestration",
+        # Phase 22: the findings engine generating/updating a finding.
+        "finding_generation",
     }
     assert {op.value for op in ProcessingOperation} == expected
 
