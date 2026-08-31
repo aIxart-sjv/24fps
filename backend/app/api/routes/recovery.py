@@ -19,17 +19,33 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.adapters.cp_plus.recovery import DELETED_RECOVERY_NOT_VALIDATED_STATEMENT
+from app.api.deps import require_case_access_for_evidence
 from app.core.recovery_manager import RecoveryManager
+from app.models import Evidence, RecoveryMethod, RecoveryResult, RecoveryStatus
 from app.schemas.recovery import RecoveryResultResponse
 from app.storage.db import get_db
 
 router = APIRouter()
 
 
+def _recovery_result_response(result: RecoveryResult) -> RecoveryResultResponse:
+    response = RecoveryResultResponse.model_validate(result)
+    if (
+        result.status == RecoveryStatus.UNSUPPORTED.value
+        and result.method == RecoveryMethod.FILESYSTEM_INDEX.value
+    ):
+        response.validation_warning = DELETED_RECOVERY_NOT_VALIDATED_STATEMENT
+    return response
+
+
 @router.get("/evidence/{evidence_id}/recovery-results", response_model=list[RecoveryResultResponse])
 def list_recovery_results(
-    evidence_id: int, db: Session = Depends(get_db)
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> list[RecoveryResultResponse]:
     """List every recovery attempt recorded against one evidence item, newest first."""
+    del evidence
     results = RecoveryManager.list_recovery_results(db, evidence_id)
-    return [RecoveryResultResponse.model_validate(r) for r in results]
+    return [_recovery_result_response(r) for r in results]

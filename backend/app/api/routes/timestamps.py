@@ -11,7 +11,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
+from app.core.case_authorization_service import CaseAccessDeniedError, CaseAuthorizationService
 from app.core.timestamp_manager import TimestampManager
+from app.models import User
 from app.schemas.timestamp import TimestampNormalizeRequest, TimestampNormalizeResponse
 from app.storage.db import get_db
 from app.timeline import NormalizationMethod, ReferencePair
@@ -21,7 +24,9 @@ router = APIRouter()
 
 @router.post("/timestamps/normalize", response_model=TimestampNormalizeResponse)
 def normalize_timestamp(
-    request: TimestampNormalizeRequest, db: Session = Depends(get_db)
+    request: TimestampNormalizeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TimestampNormalizeResponse:
     """Normalize one recording's original timestamps and persist the result.
 
@@ -29,7 +34,21 @@ def normalize_timestamp(
     outcome — those are legitimate, honestly-reported results, not
     errors. Only a missing recording or an invalid reference method
     fails the request.
+
+    `recording_id` is a request-body field here, not a path parameter, so
+    this authorizes manually (there is no path segment for a
+    `require_case_access_for_recording`-style dependency to key on) --
+    same check, same 403, just resolved after the body is parsed.
     """
+    case_id = CaseAuthorizationService.resolve_case_id_for_recording(db, request.recording_id)
+    if case_id is not None:
+        try:
+            CaseAuthorizationService.require_case_access(db, current_user, case_id)
+        except CaseAccessDeniedError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
     reference: ReferencePair | None = None
     if request.reference is not None:
         try:

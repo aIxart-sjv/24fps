@@ -55,7 +55,9 @@ def _make_recording_with_clip(test_db, case: Case, tmp_path: Path) -> Recording:
     return recording
 
 
-def test_create_ai_job_endpoint_runs_motion_detection(test_client, test_db, tmp_path: Path) -> None:
+def test_create_ai_job_endpoint_runs_motion_detection(
+    test_client, test_db, tmp_path: Path, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     recording = _make_recording_with_clip(test_db, case, tmp_path)
 
@@ -67,6 +69,7 @@ def test_create_ai_job_endpoint_runs_motion_detection(test_client, test_db, tmp_
             "analysis_types": ["motion_detection"],
             "sampling_strategy": "all",
         },
+        headers=make_authenticated_headers(),
     )
 
     assert response.status_code == 200
@@ -79,7 +82,9 @@ def test_create_ai_job_endpoint_runs_motion_detection(test_client, test_db, tmp_
     assert data["completed_at"] is not None
 
 
-def test_create_ai_job_endpoint_missing_case_returns_404(test_client) -> None:
+def test_create_ai_job_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
     response = test_client.post(
         "/api/v1/ai/jobs",
         json={
@@ -87,25 +92,32 @@ def test_create_ai_job_endpoint_missing_case_returns_404(test_client) -> None:
             "recording_ids": [1],
             "analysis_types": ["motion_detection"],
         },
+        headers=make_authenticated_headers(),
     )
 
     assert response.status_code == 404
 
 
-def test_create_ai_job_endpoint_invalid_analysis_type_returns_400(test_client, test_db) -> None:
+def test_create_ai_job_endpoint_invalid_analysis_type_returns_400(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
 
     response = test_client.post(
         "/api/v1/ai/jobs",
         json={"case_id": case.id, "recording_ids": [1], "analysis_types": ["not_a_real_type"]},
+        headers=make_authenticated_headers(),
     )
 
     assert response.status_code == 400
 
 
-def test_get_job_endpoint_returns_the_job(test_client, test_db, tmp_path: Path) -> None:
+def test_get_job_endpoint_returns_the_job(
+    test_client, test_db, tmp_path: Path, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     recording = _make_recording_with_clip(test_db, case, tmp_path)
+    headers = make_authenticated_headers()
 
     created = test_client.post(
         "/api/v1/ai/jobs",
@@ -115,21 +127,24 @@ def test_get_job_endpoint_returns_the_job(test_client, test_db, tmp_path: Path) 
             "analysis_types": ["motion_detection"],
             "sampling_strategy": "all",
         },
+        headers=headers,
     ).json()
 
-    response = test_client.get(f"/api/v1/jobs/{created['id']}")
+    response = test_client.get(f"/api/v1/jobs/{created['id']}", headers=headers)
 
     assert response.status_code == 200
     assert response.json()["id"] == created["id"]
     assert response.json()["status"] == "completed"
 
 
-def test_get_job_endpoint_missing_job_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/jobs/999999")
+def test_get_job_endpoint_missing_job_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get("/api/v1/jobs/999999", headers=make_authenticated_headers())
     assert response.status_code == 404
 
 
-def test_list_ai_results_endpoint_returns_persisted_results(test_client, test_db) -> None:
+def test_list_ai_results_endpoint_returns_persisted_results(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     evidence = Evidence(evidence_id="EVID-LISTAI", case_id=case.id, source_type="cp_plus")
     test_db.add(evidence)
@@ -163,7 +178,9 @@ def test_list_ai_results_endpoint_returns_persisted_results(test_client, test_db
     test_db.add(result)
     test_db.commit()
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/ai-results")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/ai-results", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -172,18 +189,25 @@ def test_list_ai_results_endpoint_returns_persisted_results(test_client, test_db
     assert data[0]["bbox"] == {"x_min": 0.0, "y_min": 0.0, "x_max": 10.0, "y_max": 10.0}
 
 
-def test_list_ai_results_endpoint_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/ai-results")
+def test_list_ai_results_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    response = test_client.get(
+        "/api/v1/cases/999999/ai-results", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404
 
 
 @requires_object_detection_model
-def test_real_ai_job_end_to_end_never_claims_identity(test_client, test_db, tmp_path: Path) -> None:
+def test_real_ai_job_end_to_end_never_claims_identity(
+    test_client, test_db, tmp_path: Path, make_authenticated_headers
+) -> None:
     """Manual/automated verification: run one real AI job end to end
     through the HTTP API and confirm no response text anywhere claims
     identity or recognition."""
     case = _make_case(test_db)
     recording = _make_recording_with_clip(test_db, case, tmp_path)
+    headers = make_authenticated_headers()
 
     job_response = test_client.post(
         "/api/v1/ai/jobs",
@@ -193,10 +217,11 @@ def test_real_ai_job_end_to_end_never_claims_identity(test_client, test_db, tmp_
             "analysis_types": ["object_detection", "motion_detection"],
             "sampling_strategy": "all",
         },
+        headers=headers,
     )
     assert job_response.status_code == 200
 
-    results_response = test_client.get(f"/api/v1/cases/{case.id}/ai-results")
+    results_response = test_client.get(f"/api/v1/cases/{case.id}/ai-results", headers=headers)
     assert results_response.status_code == 200
 
     blob = (str(job_response.json()) + str(results_response.json())).lower()

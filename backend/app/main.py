@@ -21,7 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.api.routes import acquisition as acquisition_routes
 from app.api.routes import ai as ai_routes
+from app.api.routes import artifacts as artifacts_routes
 from app.api.routes import audit as audit_routes
 from app.api.routes import auth as auth_routes
 from app.api.routes import blockchain as blockchain_routes
@@ -29,6 +31,7 @@ from app.api.routes import cases as cases_routes
 from app.api.routes import correlation as correlation_routes
 from app.api.routes import custody as custody_routes
 from app.api.routes import devices as devices_routes
+from app.api.routes import evidence as evidence_routes
 from app.api.routes import findings as findings_routes
 from app.api.routes import integrity as integrity_routes
 from app.api.routes import jobs as jobs_routes
@@ -37,8 +40,12 @@ from app.api.routes import processing as processing_routes
 from app.api.routes import recordings as recordings_routes
 from app.api.routes import recovery as recovery_routes
 from app.api.routes import reports as reports_routes
+from app.api.routes import search as search_routes
 from app.api.routes import system as system_routes
+from app.api.routes import timeline as timeline_routes
 from app.api.routes import timestamps as timestamps_routes
+from app.api.routes import admin_access as admin_access_routes
+from app.api.routes import users as users_routes
 from app.api.routes import validation as validation_routes
 from app.bootstrap import run_database_migrations
 from app.config import get_settings
@@ -51,9 +58,14 @@ API_V1_PREFIX: str = "/api/v1"
 
 # Local development origins for the React/Vite frontend and the Tauri
 # desktop shell, per Master Specification Section 64 ("Localhost API").
+# Phase 23: the supplied frontend's `vite --port=3000` replaced the
+# previous frontend's default 5173 -- both are kept so either dev server
+# configuration works without editing this file again.
 _LOCAL_DEV_ORIGINS: list[str] = [
     "http://127.0.0.1:5173",
     "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
     "tauri://localhost",
 ]
 
@@ -178,6 +190,17 @@ def create_app() -> FastAPI:
     application.include_router(
         notifications_routes.router, prefix=API_V1_PREFIX, tags=["notifications"]
     )
+    application.include_router(timeline_routes.router, prefix=API_V1_PREFIX, tags=["timeline"])
+    application.include_router(artifacts_routes.router, prefix=API_V1_PREFIX, tags=["artifacts"])
+    application.include_router(users_routes.router, prefix=API_V1_PREFIX, tags=["users"])
+    application.include_router(
+        admin_access_routes.router, prefix=API_V1_PREFIX, tags=["admin-access"]
+    )
+    application.include_router(
+        acquisition_routes.router, prefix=API_V1_PREFIX, tags=["acquisition"]
+    )
+    application.include_router(evidence_routes.router, prefix=API_V1_PREFIX, tags=["evidence"])
+    application.include_router(search_routes.router, prefix=API_V1_PREFIX, tags=["search"])
 
     @application.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

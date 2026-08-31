@@ -14,14 +14,13 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_case_access, require_case_access_for_evidence
 from app.core.audit_chain_manager import AuditChainManager
-from app.core.case_manager import CaseManager
-from app.core.evidence_manager import EvidenceManager
 from app.core.provenance_manager import ProvenanceManager
-from app.models import ProcessingEvent
+from app.models import Case, Evidence, ProcessingEvent
 from app.schemas.audit import (
     ChainFailureResponse,
     ChainVerificationResponse,
@@ -66,40 +65,38 @@ def _event_response(event: ProcessingEvent) -> ProcessingEventResponse:
 
 
 @router.get("/cases/{case_id}/audit", response_model=list[ProcessingEventResponse])
-def get_case_audit(case_id: int, db: Session = Depends(get_db)) -> list[ProcessingEventResponse]:
+def get_case_audit(
+    case_id: int,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
+) -> list[ProcessingEventResponse]:
     """List a case's full recorded processing history, in the order recorded."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     events = ProvenanceManager.get_case_history(db, case_id)
     return [_event_response(e) for e in events]
 
 
 @router.get("/evidence/{evidence_id}/custody", response_model=list[ProcessingEventResponse])
 def get_evidence_custody(
-    evidence_id: int, db: Session = Depends(get_db)
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> list[ProcessingEventResponse]:
     """List the chain-of-custody/processing events recorded directly against one evidence item."""
-    if EvidenceManager.get_evidence(db, evidence_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Evidence with id {evidence_id} not found",
-        )
+    del evidence
     events = ProvenanceManager.get_evidence_processing_events(db, evidence_id)
     return [_event_response(e) for e in events]
 
 
 @router.get("/cases/{case_id}/audit/verify", response_model=ChainVerificationResponse)
 def verify_case_audit_chain(
-    case_id: int, db: Session = Depends(get_db)
+    case_id: int,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> ChainVerificationResponse:
     """Verify a case's hash-linked audit chain (Phase 16). Reports where
     the chain first fails, if it does -- never a bare pass/fail."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     result = AuditChainManager.verify_case_chain(db, case_id)
     failure = (
         ChainFailureResponse(

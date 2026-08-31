@@ -149,11 +149,12 @@ def test_evidence_hash_unique_constraint(test_db, evidence_file):
 # --- API tests ---
 
 
-def test_hash_evidence_api(test_client, test_db, evidence_file):
+def test_hash_evidence_api(test_client, test_db, evidence_file, make_authenticated_headers):
     path, _content = evidence_file
     _case, evidence = _make_case_and_evidence(test_db, "INT-API-001", "E-API-001", path)
 
-    response = test_client.post(f"/api/v1/evidence/{evidence.id}/hash")
+    headers = make_authenticated_headers()
+    response = test_client.post(f"/api/v1/evidence/{evidence.id}/hash", headers=headers)
     assert response.status_code == 201
     data = response.json()
     assert len(data) == 2
@@ -161,41 +162,50 @@ def test_hash_evidence_api(test_client, test_db, evidence_file):
     assert algorithms == {"sha256", "md5"}
 
 
-def test_hash_evidence_api_not_found(test_client):
-    response = test_client.post("/api/v1/evidence/99999/hash")
-    assert response.status_code == 400
+def test_hash_evidence_api_not_found(test_client, make_authenticated_headers):
+    headers = make_authenticated_headers()
+    response = test_client.post("/api/v1/evidence/99999/hash", headers=headers)
+    # Case-access resolution (Phase 25) now 404s a nonexistent evidence
+    # item before the route body runs, unlike the 400 this used to return.
+    assert response.status_code == 404
 
 
-def test_verify_evidence_api(test_client, test_db, evidence_file):
+def test_verify_evidence_api(test_client, test_db, evidence_file, make_authenticated_headers):
     path, _ = evidence_file
     _case, evidence = _make_case_and_evidence(test_db, "INT-API-002", "E-API-002", path)
 
-    test_client.post(f"/api/v1/evidence/{evidence.id}/hash")
-    response = test_client.post(f"/api/v1/evidence/{evidence.id}/verify")
+    headers = make_authenticated_headers()
+    test_client.post(f"/api/v1/evidence/{evidence.id}/hash", headers=headers)
+    response = test_client.post(f"/api/v1/evidence/{evidence.id}/verify", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert all(row["verification_status"] == "verified" for row in data)
 
 
-def test_verify_evidence_api_without_hashes(test_client, test_db, evidence_file):
+def test_verify_evidence_api_without_hashes(
+    test_client, test_db, evidence_file, make_authenticated_headers
+):
     path, _ = evidence_file
     _case, evidence = _make_case_and_evidence(test_db, "INT-API-003", "E-API-003", path)
 
-    response = test_client.post(f"/api/v1/evidence/{evidence.id}/verify")
+    headers = make_authenticated_headers()
+    response = test_client.post(f"/api/v1/evidence/{evidence.id}/verify", headers=headers)
     assert response.status_code == 400
 
 
-def test_list_evidence_hashes_api(test_client, test_db, evidence_file):
+def test_list_evidence_hashes_api(test_client, test_db, evidence_file, make_authenticated_headers):
     path, _ = evidence_file
     _case, evidence = _make_case_and_evidence(test_db, "INT-API-004", "E-API-004", path)
 
-    test_client.post(f"/api/v1/evidence/{evidence.id}/hash")
-    response = test_client.get(f"/api/v1/evidence/{evidence.id}/hashes")
+    headers = make_authenticated_headers()
+    test_client.post(f"/api/v1/evidence/{evidence.id}/hash", headers=headers)
+    response = test_client.get(f"/api/v1/evidence/{evidence.id}/hashes", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
 
 
-def test_list_evidence_hashes_api_not_found(test_client):
-    response = test_client.get("/api/v1/evidence/99999/hashes")
+def test_list_evidence_hashes_api_not_found(test_client, make_authenticated_headers):
+    headers = make_authenticated_headers()
+    response = test_client.get("/api/v1/evidence/99999/hashes", headers=headers)
     assert response.status_code == 404

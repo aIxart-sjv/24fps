@@ -18,10 +18,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, require_case_access
 from app.api.routes.jobs import _job_response
-from app.core.case_manager import CaseManager
+from app.core.case_authorization_service import CaseAccessDeniedError, CaseAuthorizationService
 from app.core.validation_manager import ValidationManager
-from app.models import ValidationMetric
+from app.models import Case, User, ValidationMetric
 from app.schemas.validation import (
     ValidationMetricResponse,
     ValidationRunRequest,
@@ -51,7 +52,9 @@ def _metric_response(metric: ValidationMetric) -> ValidationMetricResponse:
 
 @router.post("/validation/jobs", response_model=ValidationRunResponse)
 def create_validation_job(
-    request: ValidationRunRequest, db: Session = Depends(get_db)
+    request: ValidationRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ValidationRunResponse:
     """Run one validation job against a ground-truth dataset and persist the metrics.
 
@@ -59,12 +62,20 @@ def create_validation_job(
     documented scoping decision -- no background/thread-pool executor
     exists anywhere in this codebase). The returned job is always in a
     terminal state (`completed`/`partial`/`failed`).
+
+    `case_id` lives in the request body, not the URL, so this cannot use
+    `require_case_access` as a sub-dependency (FastAPI would resolve its
+    `case_id: int` parameter as an independent, unrelated *query*
+    parameter -- there is no path segment to bind it to, and it does not
+    reach into a sibling body model's fields). Authorized manually against
+    `request.case_id` instead, once the body is already parsed.
     """
-    if CaseManager.get_case(db, request.case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Case with id {request.case_id} not found",
-        )
+    try:
+        CaseAuthorizationService.require_case_access(db, current_user, request.case_id)
+    except CaseAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     try:
         job, metrics = ValidationManager.run_validation(
             db,
@@ -91,12 +102,10 @@ def list_case_validation_metrics(
     job_id: int | None = None,
     validation_type: str | None = None,
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> list[ValidationMetricResponse]:
     """List persisted validation metrics for a case, optionally filtered."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     metrics = ValidationManager.list_validation_metrics(
         db, case_id, job_id=job_id, validation_type=validation_type
     )

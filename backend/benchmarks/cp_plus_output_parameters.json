@@ -1,0 +1,1314 @@
+{
+  "root_job_id": 1,
+  "parameters": [
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "9f5211b1d21a9fd4b2d8e46ce359c94ba4c3da16bf5d0dbb8dad839464bbf070",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "87b6246e90363753ef039453cf1ef27c",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 1",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #4",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #5",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162000_20260828162002 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 2000 ms",
+      "source": "recording 1",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 1)",
+      "value": "partial",
+      "source": "recovery result #1",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 1)",
+      "value": "50/NOT AVAILABLE",
+      "source": "recovery result #1",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162000_20260828162002 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 1",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162000_20260828162002 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 1",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #8",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "faf8da1ad43b44a38003e49447df18f9199311a21272661ae77db0efa20c726a",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "2c1c3e69dfb2380f979100ca325ca3e4",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 2",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #11",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #12",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162002_20260828162005 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 2760 ms",
+      "source": "recording 2",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 2)",
+      "value": "recovered",
+      "source": "recovery result #2",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 2)",
+      "value": "69/NOT AVAILABLE",
+      "source": "recovery result #2",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162002_20260828162005 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 2",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162002_20260828162005 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 2",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #15",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "48393d611c49caf2379faa66d557987450770bb39fdea997839f88c4fce1786f",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "ec0727af54886e0dfc86ef58c2db4569",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 3",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #18",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #19",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162005_20260828162124 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 78240 ms",
+      "source": "recording 3",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 3)",
+      "value": "recovered",
+      "source": "recovery result #3",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 3)",
+      "value": "1956/NOT AVAILABLE",
+      "source": "recovery result #3",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162005_20260828162124 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 3",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162005_20260828162124 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 3",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #22",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "7f75ec14858e4a398166931407b2baa7def25d309ec49adfddf0a552daef29c1",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "af457753c21c1e533c5b4638bdab061f",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 4",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #25",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #26",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162124_20260828162130 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 6360 ms",
+      "source": "recording 4",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 4)",
+      "value": "recovered",
+      "source": "recovery result #4",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 4)",
+      "value": "159/NOT AVAILABLE",
+      "source": "recovery result #4",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162124_20260828162130 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 4",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162124_20260828162130 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 4",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #29",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "b1cddc204079985cb057eb9c1f92b9f1211d7ecb84eaf4ef84fb9460c32574f1",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "0794f6c1d99634adf89b00cfa56c950f",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 5",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #32",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #33",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162130_20260828162456 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 206640 ms",
+      "source": "recording 5",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 5)",
+      "value": "recovered",
+      "source": "recovery result #5",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 5)",
+      "value": "5166/NOT AVAILABLE",
+      "source": "recovery result #5",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162130_20260828162456 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 5",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162130_20260828162456 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 5",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #36",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "34e8ea9ae27ef143ac82e483b40847f1b5c4b03979c97f383ae152fce0a09ac2",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "9372ef421a12db3512fdaf0a7a8b9ca1",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 6",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #39",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #40",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162456_20260828162538 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 41760 ms",
+      "source": "recording 6",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 6)",
+      "value": "recovered",
+      "source": "recovery result #6",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 6)",
+      "value": "1044/NOT AVAILABLE",
+      "source": "recovery result #6",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162456_20260828162538 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 6",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162456_20260828162538 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 6",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #43",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "fe151fecc63f326ed79b4002358740681aa96430c96e7dd285979159301ca8d1",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "88c7ccd27ae22dbfab2f047396529976",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 7",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #46",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #47",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162538_20260828162603 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 25240 ms",
+      "source": "recording 7",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 7)",
+      "value": "recovered",
+      "source": "recovery result #7",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 7)",
+      "value": "631/NOT AVAILABLE",
+      "source": "recovery result #7",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162538_20260828162603 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 7",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162538_20260828162603 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 7",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #50",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "0176792b35859142f6b6ded8d47d1bdf887c10b02d63ce1f11b80c5b54f48570",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "1166f29a0cc52f44d5a2272dee738695",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 8",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #53",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #54",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162603_20260828162622 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 18560 ms",
+      "source": "recording 8",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 8)",
+      "value": "recovered",
+      "source": "recovery result #8",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 8)",
+      "value": "464/NOT AVAILABLE",
+      "source": "recovery result #8",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162603_20260828162622 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 8",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162603_20260828162622 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 8",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #57",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "c97ca61e853814c677fc04547efd9040297fddb2b040b8ea22e238ff552c74ba",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "afc367b8e33625afdbe3c0dd4436d4ef",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 9",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #60",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #61",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162622_20260828162825 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 123440 ms",
+      "source": "recording 9",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 9)",
+      "value": "recovered",
+      "source": "recovery result #9",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 9)",
+      "value": "3086/NOT AVAILABLE",
+      "source": "recovery result #9",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162622_20260828162825 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 9",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162622_20260828162825 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 9",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #64",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "446c34226abbd762e0fb2c36f4d80b8ee6ff039da654b9aa163248b975e1a4c5",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "e348cef0cff54d18c8b738170ced11e1",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 10",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #67",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #68",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162825_20260828162826 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 1360 ms",
+      "source": "recording 10",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 10)",
+      "value": "recovered",
+      "source": "recovery result #10",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 10)",
+      "value": "34/NOT AVAILABLE",
+      "source": "recovery result #10",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162825_20260828162826 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 10",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162825_20260828162826 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 10",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #71",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "ef996c71ee2fb7cd2b8a036b1fe1dc3ae1686c4cad7f1f202bd77d9f4323c5b4",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "a26e6a97a6a3c28b4a0621b01dc23734",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 11",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #74",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #75",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162826_20260828162849 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 22640 ms",
+      "source": "recording 11",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 11)",
+      "value": "recovered",
+      "source": "recovery result #11",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 11)",
+      "value": "566/NOT AVAILABLE",
+      "source": "recovery result #11",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162826_20260828162849 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 11",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162826_20260828162849 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 11",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #78",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "faf32e2cd6ba3b7626cb6be2a1abaf322ecb1484580757c479ea3550d39cca51",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "2c9a7edbb901eea1d941d1f6047373c2",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 12",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #81",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #82",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162849_20260828162913 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 23600 ms",
+      "source": "recording 12",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 12)",
+      "value": "recovered",
+      "source": "recovery result #12",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 12)",
+      "value": "590/NOT AVAILABLE",
+      "source": "recovery result #12",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162849_20260828162913 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 12",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162849_20260828162913 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 12",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #85",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "SHA256 hash",
+      "value": "3183568a910864730b7a91587450d5e0fe8f6d318077b97c28560bf689434e83",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "parameter": "MD5 hash",
+      "value": "c4c94bda1bb44f5038209ac0deab3733",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Vendor",
+      "value": "CP Plus",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Model",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Firmware",
+      "value": "NOT AVAILABLE",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "parameter": "Device type",
+      "value": "export",
+      "source": "evidence 13",
+      "notes": null
+    },
+    {
+      "module": "Enumeration",
+      "parameter": "Recordings found",
+      "value": "1",
+      "source": "job #88",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recordings extracted",
+      "value": "1",
+      "source": "job #89",
+      "notes": null
+    },
+    {
+      "module": "Extraction",
+      "parameter": "Recording NVR_ch1_main_20260828162913_20260828163000 codec/resolution/fps",
+      "value": "hevc \u00b7 1920x1080 \u00b7 25.0 fps \u00b7 50000 ms",
+      "source": "recording 13",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Recovery status (recording 13)",
+      "value": "partial",
+      "source": "recovery result #13",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "parameter": "Frames recovered (recording 13)",
+      "value": "1250/NOT AVAILABLE",
+      "source": "recovery result #13",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162913_20260828163000 normalized start",
+      "value": "NOT AVAILABLE",
+      "source": "recording 13",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "parameter": "Recording NVR_ch1_main_20260828162913_20260828163000 normalized end",
+      "value": "NOT AVAILABLE",
+      "source": "recording 13",
+      "notes": null
+    },
+    {
+      "module": "Timeline",
+      "parameter": "Timeline events ingested",
+      "value": "2",
+      "source": "job #92",
+      "notes": null
+    },
+    {
+      "module": "Correlation",
+      "parameter": "Status",
+      "value": "SKIPPED",
+      "source": "job #93",
+      "notes": null
+    },
+    {
+      "module": "Validation",
+      "parameter": "Status",
+      "value": "REQUIRES_REVIEW",
+      "source": "job #94",
+      "notes": null
+    },
+    {
+      "module": "Audit chain",
+      "parameter": "Chain valid",
+      "value": "True",
+      "source": "AuditChainManager.verify_case_chain",
+      "notes": null
+    },
+    {
+      "module": "Blockchain",
+      "parameter": "Total anchors",
+      "value": "0",
+      "source": "blockchain_anchors",
+      "notes": "no anchor has been created for this case"
+    },
+    {
+      "module": "Report",
+      "parameter": "Latest report",
+      "value": "NOT AVAILABLE",
+      "source": "reports",
+      "notes": "no report generated yet for this case"
+    }
+  ]
+}

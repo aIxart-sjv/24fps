@@ -97,6 +97,7 @@ class JobManager:
         output_artifacts: list[int] | None = None,
         error: str | None = None,
         warnings: list[str] | None = None,
+        resource_metrics: dict[str, object] | None = None,
     ) -> Job:
         """Transition a job to a terminal state, stamping `completed_at`.
 
@@ -119,6 +120,11 @@ class JobManager:
             error: A summary error message, if the job did not fully
                 succeed.
             warnings: Non-fatal issues encountered.
+            resource_metrics: Real, measured resource usage for this job
+                (`app.core.resource_metrics.diff_resource_snapshots`) --
+                never a placeholder or estimate. Optional: most `job_type`
+                callers do not populate this, and existing rows never
+                have it.
 
         Returns:
             The updated `Job`.
@@ -141,6 +147,8 @@ class JobManager:
             job.error = error
         if warnings is not None:
             job.warnings = json.dumps(warnings)
+        if resource_metrics is not None:
+            job.resource_metrics = json.dumps(resource_metrics)
         db.add(job)
         db.commit()
         db.refresh(job)

@@ -13,17 +13,83 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
-from app.core.case_manager import CaseManager
+from app.api.deps import get_current_user, require_case_access, require_case_access_for_finding
 from app.core.findings_engine import FindingsEngine
-from app.models import Finding, FindingStatus, User
+from app.models import (
+    AIResult,
+    Case,
+    Finding,
+    FindingStatus,
+    Recording,
+    RecoveryResult,
+    TimelineEvent,
+    User,
+)
 from app.schemas.finding import FindingResponse, FindingUpdateRequest
 from app.storage.db import get_db
 
 router = APIRouter()
 
 
-def _finding_response(finding: Finding) -> FindingResponse:
+def _resolve_finding_location(db: Session, finding: Finding) -> tuple[int | None, datetime | None]:
+    """Resolve `(recording_id, timestamp)` for a finding -- never a
+    fabricated value, only what a directly-referenced result already
+    establishes. See `FindingResponse.resolved_recording_id`'s docstring
+    for the resolution order."""
+    if finding.recording_id is not None:
+        recording = db.query(Recording).filter(Recording.id == finding.recording_id).first()
+        timestamp = (recording.start_normalized or recording.start_original) if recording else None
+        return finding.recording_id, timestamp
+
+    reference: dict[str, object] = (
+        json.loads(finding.source_reference) if finding.source_reference else {}
+    )
+
+    ai_job_id = reference.get("ai_job_id")
+    if isinstance(ai_job_id, int):
+        first_result = (
+            db.query(AIResult)
+            .filter(AIResult.job_id == ai_job_id)
+            .order_by(AIResult.frame_number.asc())
+            .first()
+        )
+        if first_result is not None:
+            return first_result.recording_id, first_result.timestamp
+
+    correlated_event_ids = reference.get("correlated_event_ids")
+    if isinstance(correlated_event_ids, list) and correlated_event_ids:
+        first_event = (
+            db.query(TimelineEvent)
+            .filter(TimelineEvent.id.in_(correlated_event_ids))
+            .order_by(TimelineEvent.id.asc())
+            .first()
+        )
+        if first_event is not None and first_event.recording_id is not None:
+            return (
+                first_event.recording_id,
+                first_event.normalized_timestamp or first_event.original_timestamp,
+            )
+
+    recovery_result_id = reference.get("recovery_result_id")
+    if isinstance(recovery_result_id, int):
+        recovery_result = (
+            db.query(RecoveryResult).filter(RecoveryResult.id == recovery_result_id).first()
+        )
+        if recovery_result is not None:
+            recording = (
+                db.query(Recording).filter(Recording.id == recovery_result.recording_id).first()
+            )
+            if recording is not None:
+                return (
+                    recovery_result.recording_id,
+                    recording.start_normalized or recording.start_original,
+                )
+
+    return None, None
+
+
+def _finding_response(db: Session, finding: Finding) -> FindingResponse:
+    resolved_recording_id, resolved_timestamp = _resolve_finding_location(db, finding)
     return FindingResponse(
         id=finding.id,
         case_id=finding.case_id,
@@ -44,6 +110,8 @@ def _finding_response(finding: Finding) -> FindingResponse:
         resolved_at=finding.resolved_at,
         resolved_by=finding.resolved_by,
         resolution_notes=finding.resolution_notes,
+        resolved_recording_id=resolved_recording_id,
+        resolved_timestamp=resolved_timestamp,
     )
 
 
@@ -53,49 +121,37 @@ def list_case_findings(
     status_filter: str | None = None,
     severity: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    case: Case = Depends(require_case_access),
 ) -> list[FindingResponse]:
     """List a case's findings, most urgent/unresolved first (deterministic
     priority order -- see `FindingsEngine.list_case_findings`'s docstring)."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
-    findings = FindingsEngine.list_case_findings(db, case_id, status=status_filter, severity=severity)
-    return [_finding_response(f) for f in findings]
+    del case
+    findings = FindingsEngine.list_case_findings(
+        db, case_id, status=status_filter, severity=severity
+    )
+    return [_finding_response(db, f) for f in findings]
 
 
 @router.get("/findings/{finding_id}", response_model=FindingResponse)
 def get_finding(
-    finding_id: int,
+    finding: Finding = Depends(require_case_access_for_finding),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> FindingResponse:
     """Retrieve one finding by ID."""
-    finding = FindingsEngine.get_finding(db, finding_id)
-    if finding is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Finding with id {finding_id} not found"
-        )
-    return _finding_response(finding)
+    return _finding_response(db, finding)
 
 
 @router.patch("/findings/{finding_id}", response_model=FindingResponse)
 def update_finding(
-    finding_id: int,
     request: FindingUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    finding: Finding = Depends(require_case_access_for_finding),
 ) -> FindingResponse:
     """Move a finding through its reviewable lifecycle (task Phase 22
     scope, "Finding Lifecycle") -- never deletes it. The examiner remains
     responsible for interpretation; this endpoint only records that
     review happened, not any conclusion about the underlying evidence."""
-    finding = FindingsEngine.get_finding(db, finding_id)
-    if finding is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Finding with id {finding_id} not found"
-        )
     try:
         new_status = FindingStatus(request.status)
     except ValueError as exc:
@@ -113,4 +169,4 @@ def update_finding(
     db.add(finding)
     db.commit()
     db.refresh(finding)
-    return _finding_response(finding)
+    return _finding_response(db, finding)

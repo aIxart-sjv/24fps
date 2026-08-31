@@ -17,7 +17,9 @@ from app.schemas.evidence import EvidenceCreateRequest
 
 
 def _make_case(db, case_id: str = "CASE-PROC-API-1"):
-    return CaseManager.create_case(db, CaseCreateRequest(case_id=case_id, name="Processing API test"))
+    return CaseManager.create_case(
+        db, CaseCreateRequest(case_id=case_id, name="Processing API test")
+    )
 
 
 def _make_user(db, username: str, password: str = "password123", role: UserRole = UserRole.OFFICER):
@@ -52,7 +54,9 @@ class TestProcessingApi:
         resp = test_client.post(f"/api/v1/cases/{case.id}/process")
         assert resp.status_code == 401
 
-    def test_process_case_unknown_case_404(self, test_db, test_client, monkeypatch, tmp_path) -> None:
+    def test_process_case_unknown_case_404(
+        self, test_db, test_client, monkeypatch, tmp_path
+    ) -> None:
         monkeypatch.setenv("EVIDENCE_ROOT", str(tmp_path))
         get_settings.cache_clear()
         _make_user(test_db, "officer_404")
@@ -71,7 +75,7 @@ class TestProcessingApi:
         _register_native_export_evidence(
             test_db, case, tmp_path, b"not a real cpv file, no ADIT magic header at all"
         )
-        _make_user(test_db, "officer_process")
+        _make_user(test_db, "officer_process", role=UserRole.ADMIN)
         headers = _auth_headers(test_client, "officer_process")
 
         resp = test_client.post(f"/api/v1/cases/{case.id}/process", headers=headers)
@@ -114,7 +118,7 @@ class TestProcessingApi:
         get_settings.cache_clear()
         case = _make_case(test_db)
         _register_native_export_evidence(test_db, case, tmp_path, b"garbage, no magic header")
-        _make_user(test_db, "officer_a")
+        _make_user(test_db, "officer_a", role=UserRole.ADMIN)
         _make_user(test_db, "officer_b")
         headers_a = _auth_headers(test_client, "officer_a")
         headers_b = _auth_headers(test_client, "officer_b")
@@ -141,7 +145,7 @@ class TestProcessingApi:
         get_settings.cache_clear()
         case = _make_case(test_db)
         _register_native_export_evidence(test_db, case, tmp_path, b"garbage, no magic header")
-        _make_user(test_db, "officer_review")
+        _make_user(test_db, "officer_review", role=UserRole.ADMIN)
         headers = _auth_headers(test_client, "officer_review")
         test_client.post(f"/api/v1/cases/{case.id}/process", headers=headers)
 
@@ -160,13 +164,15 @@ class TestProcessingApi:
         assert body["resolved_by"] == "Officer_Review"
         get_settings.cache_clear()
 
-    def test_processing_run_lookup_endpoints(self, test_db, test_client, monkeypatch, tmp_path) -> None:
+    def test_processing_run_lookup_endpoints(
+        self, test_db, test_client, monkeypatch, tmp_path
+    ) -> None:
         monkeypatch.setenv("EVIDENCE_ROOT", str(tmp_path / "evidence"))
         monkeypatch.setenv("ARTIFACT_ROOT", str(tmp_path / "artifacts"))
         get_settings.cache_clear()
         case = _make_case(test_db)
         _register_native_export_evidence(test_db, case, tmp_path, b"garbage, no magic header")
-        _make_user(test_db, "officer_lookup")
+        _make_user(test_db, "officer_lookup", role=UserRole.ADMIN)
         headers = _auth_headers(test_client, "officer_lookup")
         process_resp = test_client.post(f"/api/v1/cases/{case.id}/process", headers=headers)
         root_job_id = process_resp.json()["root_job"]["id"]
@@ -181,4 +187,84 @@ class TestProcessingApi:
 
         missing_resp = test_client.get("/api/v1/processing/999999", headers=headers)
         assert missing_resp.status_code == 404
+        get_settings.cache_clear()
+
+    def test_processing_run_duration_and_results_endpoint(
+        self, test_db, test_client, monkeypatch, tmp_path
+    ) -> None:
+        """Phase 24-2 task scope, "Processing Performance, Accuracy/
+        Validation, and Output Parameter tables from REAL runtime data":
+        every stage and the root run must report a real, high-resolution
+        measured duration plus real CPU/RSS/input data, and two separate
+        endpoints must expose accuracy/validation signals and raw outputs
+        -- never mixed together, and never with a timing value leaking
+        into either."""
+        monkeypatch.setenv("EVIDENCE_ROOT", str(tmp_path / "evidence"))
+        monkeypatch.setenv("ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+        get_settings.cache_clear()
+        case = _make_case(test_db)
+        _register_native_export_evidence(test_db, case, tmp_path, b"garbage, no magic header")
+        _make_user(test_db, "officer_perf", role=UserRole.ADMIN)
+        headers = _auth_headers(test_client, "officer_perf")
+
+        process_resp = test_client.post(f"/api/v1/cases/{case.id}/process", headers=headers)
+        assert process_resp.status_code == 200, process_resp.text
+        body = process_resp.json()
+        root_job_id = body["root_job"]["id"]
+
+        assert body["total_duration_seconds"] is not None
+        assert body["total_duration_seconds"] >= 0
+        assert body["stages"], "expected at least one pipeline stage"
+        for stage in body["stages"]:
+            assert stage["duration_seconds"] is not None
+            assert stage["duration_seconds"] >= 0
+            assert stage["high_resolution_timing"] is True
+            assert stage["cpu_user_seconds"] is not None
+            assert stage["cpu_system_seconds"] is not None
+            assert stage["peak_rss_kb"] is not None
+            assert stage["peak_rss_kb"] > 0
+
+        # The integrity/identification/enumeration stages all read the
+        # same real evidence source file on disk.
+        integrity_stage = next(s for s in body["stages"] if s["job_type"] == "integrity")
+        assert integrity_stage["input_type"] == "evidence_source_file"
+        assert integrity_stage["input_size_unit"] == "bytes"
+        assert integrity_stage["input_size"] == len(b"garbage, no magic header")
+
+        accuracy_resp = test_client.get(
+            f"/api/v1/processing/{root_job_id}/accuracy", headers=headers
+        )
+        assert accuracy_resp.status_code == 200, accuracy_resp.text
+        accuracy_body = accuracy_resp.json()
+        assert accuracy_body["root_job_id"] == root_job_id
+        for metric in accuracy_body["metrics"]:
+            assert metric["status"] in (
+                "VALIDATED",
+                "CONTROLLED",
+                "OBSERVATION",
+                "UNVERIFIED",
+                "N/A",
+            )
+            assert "duration" not in metric["metric"].lower()
+
+        outputs_resp = test_client.get(f"/api/v1/processing/{root_job_id}/outputs", headers=headers)
+        assert outputs_resp.status_code == 200, outputs_resp.text
+        outputs_body = outputs_resp.json()
+        assert outputs_body["root_job_id"] == root_job_id
+        assert outputs_body["parameters"]
+        output_modules = {p["module"] for p in outputs_body["parameters"]}
+        assert "Integrity verification" in output_modules
+        # Case-level outputs (never tied to one stage job) are present too.
+        assert "Audit chain" in output_modules
+        assert "Blockchain" in output_modules
+        assert "Report" in output_modules
+        for parameter in outputs_body["parameters"]:
+            assert "duration" not in parameter["parameter"].lower()
+
+        missing_accuracy_resp = test_client.get(
+            "/api/v1/processing/999999/accuracy", headers=headers
+        )
+        assert missing_accuracy_resp.status_code == 404
+        missing_outputs_resp = test_client.get("/api/v1/processing/999999/outputs", headers=headers)
+        assert missing_outputs_resp.status_code == 404
         get_settings.cache_clear()

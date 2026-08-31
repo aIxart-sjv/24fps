@@ -12,12 +12,16 @@ the result as `Recording`/`RecordingMetadata`/`Artifact` rows.
 
 Vendor dispatch is currently CP Plus-only and explicit (this evidence
 either matches the validated "ADIT-v1" structure or it does not) rather
-than routed through `app.adapters.registry.AdapterRegistry` +
-`app.models.device.Device` identification: nothing in `app.detection`
-currently populates a device's vendor as `"CP Plus"`, so registry-based
-dispatch would not actually select this adapter today. Wiring that up is a
-Phase 6/7 gap, not this phase's job — see the Phase 9 plan for the full
-rationale. A second real vendor adapter should prompt revisiting this.
+than routed through `app.adapters.registry.AdapterRegistry`: nothing in
+`app.detection` can determine vendor from generic container inspection
+alone, so registry-based dispatch cannot yet select this adapter *before*
+this module has already tried it. Once this module confirms a match,
+though, it does write that confirmation back onto `Device` (via
+`EvidenceManager.confirm_vendor`, Phase 24) so downstream consumers
+(acquisition/identification API responses) see the real vendor rather
+than `app.detection.device_identifier`'s generic, deliberately
+vendor-blind result. A second real vendor adapter should prompt
+revisiting the dispatch side of this gap.
 """
 
 from __future__ import annotations
@@ -46,16 +50,41 @@ from app.hashing.sha256 import sha256_file
 from app.media.decoder import mux_hevc_annexb_to_mp4, transcode_to_h264_mp4
 from app.media.ffmpeg import get_ffmpeg_version
 from app.media.media_probe import probe_media
-from app.models import Case, Evidence, Recording, RecordingMetadata
+from app.models import Artifact, Case, Evidence, Recording, RecordingMetadata
 from app.schemas.artifact import ArtifactCreateRequest
 from app.storage.artifact_store import prepare_artifact_directory
 
 _UNSUPPORTED_STATUSES = frozenset({CPPlusParseStatus.UNKNOWN, CPPlusParseStatus.UNSUPPORTED})
 
+#: Vendor-identification confidence once this evidence's container has
+#: been successfully parsed against CP Plus's own documented "ADIT-v1"
+#: recording structure (task Phase 24 scope, "Acquisition Metadata -- Fix
+#: Accuracy"). This is confidence that the structure genuinely *is* CP
+#: Plus's format -- as strong a basis as `app.detection.device_identifier`
+#: gives a verified container signature -- not a statement about whether
+#: this particular recording's data is intact (`Recording.confidence`, a
+#: separate field, already carries that; a `SUPPORTED_CORRUPTED`/
+#: `SUPPORTED_PARTIAL` status still definitively identifies the vendor).
+_CP_PLUS_VENDOR_CONFIDENCE = 1.0
+_CP_PLUS_IDENTIFICATION_METHOD = "cp_plus_structure_signature"
+
 #: `RecordingMetadata.key` for the ordered, JSON-encoded list of
 #: `{"evidence_pk", "evidence_business_id", "segment_recording_id",
 #: "filename"}` a session `Recording` was linked from.
 _SOURCE_SEGMENTS_KEY = "source_segments"
+
+#: `Recording` columns whose only authoritative source is an actual
+#: `ffprobe` pass over produced derived media (`extract_recording`'s own
+#: mux+probe step, or `refresh_media_metadata`'s re-probe), plus the
+#: `artifact_id` FK that pass establishes -- CP Plus's own container
+#: format never carries any of them (`to_recording_fields`' docstring), so
+#: `to_recording_fields` always maps them to `None`.
+#: `_ensure_segment_recording`'s enumeration-update path must never
+#: overwrite an existing `Recording` row's real values with those `None`
+#: placeholders.
+_MEDIA_PROBE_OWNED_FIELDS = frozenset(
+    {"codec", "container", "width", "height", "fps", "duration_ms", "artifact_id"}
+)
 
 
 class RecordingManager:
@@ -118,21 +147,43 @@ class RecordingManager:
             fields = to_recording_fields(cp_record)
 
             recording = (
-                db.query(Recording)
-                .filter(Recording.recording_id == cp_record.recording_id)
-                .first()
+                db.query(Recording).filter(Recording.recording_id == cp_record.recording_id).first()
             )
             if recording is None:
                 recording = Recording(evidence_id=evidence.id, **fields)
                 db.add(recording)
             else:
+                # `fields` always carries `to_recording_fields`' own
+                # `None` placeholders for `_MEDIA_PROBE_OWNED_FIELDS`
+                # (CP Plus's container never carries them -- see that
+                # function's docstring) -- re-running enumeration (this
+                # method backs the plain `GET /evidence/{id}/recordings`
+                # route, which the frontend calls on every Evidence-tab
+                # view, not just once) must never blindly overwrite an
+                # already-extracted/-probed `Recording` row's real values
+                # with those placeholders. Phase 24.1 root cause: this
+                # silently discarded `extract_recording`'s own probed
+                # width/height/fps/duration_ms the moment an officer next
+                # opened the Evidence tab.
                 for key, value in fields.items():
+                    if key in _MEDIA_PROBE_OWNED_FIELDS:
+                        continue
                     setattr(recording, key, value)
             db.commit()
             db.refresh(recording)
 
+            EvidenceManager.confirm_vendor(
+                db,
+                evidence.id,
+                vendor="CP Plus",
+                identification_method=_CP_PLUS_IDENTIFICATION_METHOD,
+                confidence=_CP_PLUS_VENDOR_CONFIDENCE,
+            )
+
             RecordingManager._set_metadata(db, recording, "vendor", "CP Plus")
-            RecordingManager._set_metadata(db, recording, "parser_version", cp_record.parser_version)
+            RecordingManager._set_metadata(
+                db, recording, "parser_version", cp_record.parser_version
+            )
             RecordingManager._set_metadata(
                 db, recording, "timestamp_status", cp_record.timestamp_status.value
             )
@@ -252,9 +303,7 @@ class RecordingManager:
         )
         RecordingManager._set_metadata(db, session_recording, "vendor", "CP Plus")
         RecordingManager._set_metadata(db, session_recording, "parser_version", PARSER_VERSION)
-        RecordingManager._set_metadata(
-            db, session_recording, "segment_count", str(len(segments))
-        )
+        RecordingManager._set_metadata(db, session_recording, "segment_count", str(len(segments)))
         RecordingManager._set_metadata(
             db, session_recording, "session_link_status", link_result.overall_status.value
         )
@@ -296,8 +345,12 @@ class RecordingManager:
 
         case = db.query(Case).filter(Case.id == recording.evidence.case_id).first()
         assert case is not None
-        relative_dir = f"{case.case_id}/{recording.evidence.evidence_id}/recordings/{recording.recording_id}"
-        elementary_stream_path = prepare_artifact_directory(f"{relative_dir}/elementary_stream.h265")
+        relative_dir = (
+            f"{case.case_id}/{recording.evidence.evidence_id}/recordings/{recording.recording_id}"
+        )
+        elementary_stream_path = prepare_artifact_directory(
+            f"{relative_dir}/elementary_stream.h265"
+        )
 
         warnings: list[str] = []
         total_bytes = 0
@@ -425,6 +478,141 @@ class RecordingManager:
         db.commit()
         db.refresh(recording)
         return recording
+
+    @staticmethod
+    def refresh_media_metadata(db: Session, recording_id: int) -> Recording:
+        """Re-probe this recording's already-produced derived media and
+        persist the actual codec/container/width/height/fps/duration onto
+        the `Recording` row.
+
+        Purely a read-only `ffprobe` pass over an artifact that already
+        exists on disk (task: "Use the existing recording/media probing
+        infrastructure... Do NOT rewrite/transcode the master MP4"). This
+        exists to backfill `Recording` rows whose technical metadata was
+        never captured -- e.g. rows written before `extract_recording`
+        tracked this metadata, or a recording whose HEVC master mux failed
+        (see `_resolve_probeable_artifact`) but whose H.264 preview
+        transcode still succeeded. Never re-extracts, re-muxes,
+        re-transcodes, or touches source evidence/hashes/artifact rows;
+        never fabricates a value `probe_media` did not itself return.
+
+        Args:
+            db: Database session.
+            recording_id: Primary key of the `Recording` to refresh.
+
+        Returns:
+            The updated `Recording`. If probing fails/is unavailable, the
+            existing fields are left untouched and the honest failure is
+            recorded via `media_metadata_refresh_status`/`_warnings`
+            metadata instead of raising.
+
+        Raises:
+            ValueError: If the recording is not found, or it has no
+                derived master/preview media artifact at all yet to probe
+                (extraction was never run for it).
+        """
+        recording = db.query(Recording).filter(Recording.id == recording_id).first()
+        if not recording:
+            raise ValueError(f"Recording with id {recording_id} not found")
+
+        artifact = RecordingManager._resolve_probeable_artifact(db, recording)
+        if artifact is None:
+            raise ValueError(
+                f"Recording {recording_id} has no derived master/preview media artifact to "
+                "probe -- run POST /recordings/{recording_id}/extract first"
+            )
+
+        probe = probe_media(Path(artifact.path))
+        if not probe.available:
+            RecordingManager._set_metadata(
+                db, recording, "media_metadata_refresh_status", "unavailable"
+            )
+            RecordingManager._set_metadata(
+                db, recording, "media_metadata_refresh_warnings", json.dumps(probe.warnings)
+            )
+            db.commit()
+            db.refresh(recording)
+            return recording
+
+        recording.codec = probe.codec
+        recording.container = "mp4"
+        recording.width = probe.width
+        recording.height = probe.height
+        recording.fps = probe.fps
+        if probe.duration_seconds is not None:
+            recording.duration_ms = int(probe.duration_seconds * 1000)
+        if artifact.artifact_type == RecordingManager._MASTER_ARTIFACT_TYPE and (
+            recording.artifact_id != str(artifact.id)
+        ):
+            # Self-heals a `Recording` row whose `artifact_id` link to its
+            # own master artifact was never set (or was stale) -- the
+            # master artifact/file was resolved to exist, so future reads
+            # of `Recording.artifact_id` reflect that too.
+            recording.artifact_id = str(artifact.id)
+        db.commit()
+        db.refresh(recording)
+
+        RecordingManager._set_metadata(db, recording, "media_metadata_refresh_status", "successful")
+        RecordingManager._set_metadata(
+            db, recording, "media_metadata_refreshed_from_artifact_id", str(artifact.id)
+        )
+        db.commit()
+        db.refresh(recording)
+        return recording
+
+    #: `Artifact.artifact_type` for the un-transcoded, muxed-not-re-encoded
+    #: HEVC master MP4 `extract_recording` produces -- the higher-fidelity
+    #: derived file, preferred over the H.264 preview whenever one exists.
+    _MASTER_ARTIFACT_TYPE = "cp_plus_hevc_master_mp4"
+
+    @staticmethod
+    def _resolve_probeable_artifact(db: Session, recording: Recording) -> Artifact | None:
+        """The derived media artifact whose technical metadata best
+        describes this recording: the un-transcoded HEVC master when one
+        exists, else the H.264 preview (`preview_artifact_id` metadata) --
+        whichever was actually produced. Prefers the master since it is
+        the higher-fidelity, non-lossy-re-encoded derived file; falls back
+        to the preview only when no master is available (either the mux
+        genuinely failed -- a truncated segment can fail
+        `mux_hevc_annexb_to_mp4` while the separate H.264 transcode still
+        succeeds -- or, for a `Recording` row written before
+        `extract_recording` started persisting `Recording.artifact_id`,
+        that link is simply unset even though the master artifact/file
+        genuinely exists; the `evidence_id`-scoped lookup below recovers
+        it in that case too). Returns `None` (never guesses/fabricates a
+        path) when no such artifact's row and on-disk file both exist.
+        """
+        if recording.artifact_id:
+            artifact = db.query(Artifact).filter(Artifact.id == int(recording.artifact_id)).first()
+            if artifact is not None and Path(artifact.path).is_file():
+                return artifact
+
+        master_artifact = (
+            db.query(Artifact)
+            .filter(
+                Artifact.evidence_id == recording.evidence_id,
+                Artifact.artifact_type == RecordingManager._MASTER_ARTIFACT_TYPE,
+            )
+            .order_by(Artifact.id.desc())
+            .first()
+        )
+        if master_artifact is not None and Path(master_artifact.path).is_file():
+            return master_artifact
+
+        preview_entry = (
+            db.query(RecordingMetadata)
+            .filter(
+                RecordingMetadata.recording_id == recording.id,
+                RecordingMetadata.key == "preview_artifact_id",
+            )
+            .first()
+        )
+        if preview_entry is not None and preview_entry.value:
+            artifact = db.query(Artifact).filter(Artifact.id == int(preview_entry.value)).first()
+            if artifact is not None and Path(artifact.path).is_file():
+                return artifact
+
+        return None
 
     @staticmethod
     def _resolve_segments(db: Session, recording: Recording) -> list[dict[str, Any]]:

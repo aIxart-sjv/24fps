@@ -28,7 +28,9 @@ def _make_evidence(test_db, case: Case) -> Evidence:
     return evidence
 
 
-def test_get_case_audit_returns_recorded_events(test_client, test_db) -> None:
+def test_get_case_audit_returns_recorded_events(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     evidence = _make_evidence(test_db, case)
     ProvenanceManager.record_event(
@@ -43,7 +45,9 @@ def test_get_case_audit_returns_recorded_events(test_client, test_db) -> None:
         status=JobStatus.COMPLETED,
     )
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/audit")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/audit", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -56,12 +60,14 @@ def test_get_case_audit_returns_recorded_events(test_client, test_db) -> None:
     assert data[0]["current_hash"] is not None
 
 
-def test_get_case_audit_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/audit")
+def test_get_case_audit_missing_case_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get("/api/v1/cases/999999/audit", headers=make_authenticated_headers())
     assert response.status_code == 404
 
 
-def test_get_evidence_custody_returns_recorded_events(test_client, test_db) -> None:
+def test_get_evidence_custody_returns_recorded_events(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     evidence = _make_evidence(test_db, case)
     ProvenanceManager.record_event(
@@ -74,7 +80,9 @@ def test_get_evidence_custody_returns_recorded_events(test_client, test_db) -> N
         status=JobStatus.COMPLETED,
     )
 
-    response = test_client.get(f"/api/v1/evidence/{evidence.id}/custody")
+    response = test_client.get(
+        f"/api/v1/evidence/{evidence.id}/custody", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -83,12 +91,18 @@ def test_get_evidence_custody_returns_recorded_events(test_client, test_db) -> N
     assert data[0]["actor_type"] == "human"
 
 
-def test_get_evidence_custody_missing_evidence_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/evidence/999999/custody")
+def test_get_evidence_custody_missing_evidence_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    response = test_client.get(
+        "/api/v1/evidence/999999/custody", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404
 
 
-def test_case_audit_never_includes_a_blockchain_anchor_field(test_client, test_db) -> None:
+def test_case_audit_never_includes_a_blockchain_anchor_field(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     """Phase 17 boundary: no anchor-related field leaks into the response shape."""
     case = _make_case(test_db)
     ProvenanceManager.record_event(
@@ -99,13 +113,15 @@ def test_case_audit_never_includes_a_blockchain_anchor_field(test_client, test_d
         actor_type=ActorType.SYSTEM,
         status=JobStatus.COMPLETED,
     )
-    response = test_client.get(f"/api/v1/cases/{case.id}/audit")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/audit", headers=make_authenticated_headers()
+    )
     blob = str(response.json()).lower()
     for forbidden in ("blockchain", "anchor", "transaction_reference"):
         assert forbidden not in blob
 
 
-def test_verify_case_audit_chain_valid(test_client, test_db) -> None:
+def test_verify_case_audit_chain_valid(test_client, test_db, make_authenticated_headers) -> None:
     case = _make_case(test_db)
     ProvenanceManager.record_event(
         test_db,
@@ -124,7 +140,9 @@ def test_verify_case_audit_chain_valid(test_client, test_db) -> None:
         status=JobStatus.COMPLETED,
     )
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/audit/verify")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/audit/verify", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -135,16 +153,22 @@ def test_verify_case_audit_chain_valid(test_client, test_db) -> None:
     assert data["failure"] is None
 
 
-def test_verify_case_audit_chain_empty_case_is_valid(test_client, test_db) -> None:
+def test_verify_case_audit_chain_empty_case_is_valid(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
-    response = test_client.get(f"/api/v1/cases/{case.id}/audit/verify")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/audit/verify", headers=make_authenticated_headers()
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["valid"] is True
     assert data["event_count"] == 0
 
 
-def test_verify_case_audit_chain_detects_tampering(test_client, test_db) -> None:
+def test_verify_case_audit_chain_detects_tampering(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     ProvenanceManager.record_event(
         test_db,
@@ -172,7 +196,9 @@ def test_verify_case_audit_chain_detects_tampering(test_client, test_db) -> None
     )
     test_db.commit()
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/audit/verify")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/audit/verify", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -181,6 +207,10 @@ def test_verify_case_audit_chain_detects_tampering(test_client, test_db) -> None
     assert data["failure"]["reason"] == "current_hash_mismatch"
 
 
-def test_verify_case_audit_chain_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/audit/verify")
+def test_verify_case_audit_chain_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    response = test_client.get(
+        "/api/v1/cases/999999/audit/verify", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404

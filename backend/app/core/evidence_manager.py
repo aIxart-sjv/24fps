@@ -375,6 +375,51 @@ class EvidenceManager:
         return device, result
 
     @staticmethod
+    def confirm_vendor(
+        db: Session,
+        evidence_id: int,
+        *,
+        vendor: str,
+        identification_method: str,
+        confidence: float,
+    ) -> Device:
+        """Upsert vendor-confirmation fields onto `Device` from a
+        vendor-specific manager's own positive structure match -- stronger,
+        vendor-specific evidence than `identify_device`'s generic
+        container/filesystem-signature tiers can ever produce (Master
+        Specification Section 76 rule 6: `app.detection.device_identifier`
+        deliberately never guesses a vendor).
+
+        Called once a vendor-specific parser (currently only
+        `RecordingManager`, for CP Plus) has positively confirmed evidence
+        matches that vendor's own documented recording structure -- e.g. a
+        recognized CPV/ADIT-v1 container, not merely a plausible
+        `source_type` declaration (task Phase 24 scope, "Acquisition
+        Metadata -- Fix Accuracy": "For real CP Plus evidence, use the
+        strongest actual evidence available: recognized CPV structure").
+
+        Only overwrites `vendor`/`identification_method`/`confidence`;
+        every other `Device` field (`model`/`firmware`/`serial_number`/
+        `device_type`) is left exactly as `identify_device` (or a prior
+        call to this method) set it, since a structure match alone does
+        not determine those.
+
+        Idempotent, matching `identify_device`'s own established pattern:
+        safe to call more than once (e.g. on reprocessing) against the
+        same evidence.
+        """
+        device = db.query(Device).filter(Device.evidence_id == evidence_id).first()
+        if device is None:
+            device = Device(evidence_id=evidence_id)
+            db.add(device)
+        device.vendor = vendor
+        device.identification_method = identification_method
+        device.confidence = confidence
+        db.commit()
+        db.refresh(device)
+        return device
+
+    @staticmethod
     def detect_format(db: Session, evidence_id: int) -> tuple[Storage, DeviceIdentificationResult]:
         """Run Phase 6 storage/format identification and persist onto `Storage`.
 

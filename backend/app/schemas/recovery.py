@@ -36,3 +36,11 @@ class RecoveryResultResponse(BaseModel):
     parser_version: str | None
     notes: str | None
     created_at: datetime
+    #: A structured, prominent caution -- separate from `notes`'s
+    #: per-layer debug trace -- non-`None` exactly when this result's
+    #: method/status combination is the framework-only, unvalidated
+    #: deleted-record-recovery path (`app.adapters.cp_plus.recovery.
+    #: DELETED_RECOVERY_NOT_VALIDATED_STATEMENT`). Phase 24 task scope,
+    #: "Recovery UI -- Honest Status": this must never be buried
+    #: indistinguishably among routine per-layer notes.
+    validation_warning: str | None = None

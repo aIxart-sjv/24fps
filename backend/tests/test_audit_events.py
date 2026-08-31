@@ -31,6 +31,8 @@ def test_processing_operation_matches_the_documented_vocabulary() -> None:
         "orchestration",
         # Phase 22: the findings engine generating/updating a finding.
         "finding_generation",
+        # Phase 25: an admin granting/revoking a user's case access.
+        "case_access_change",
     }
     assert {op.value for op in ProcessingOperation} == expected
 

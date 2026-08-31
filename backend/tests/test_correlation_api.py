@@ -28,12 +28,15 @@ def _marker(test_db, case: Case, camera_id: str, timestamp: datetime) -> None:
     )
 
 
-def test_run_correlation_endpoint_reproduces_the_a_b_c_scenario(test_client, test_db) -> None:
+def test_run_correlation_endpoint_reproduces_the_a_b_c_scenario(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     _marker(test_db, case, "A", datetime(2026, 8, 30, 10, 0, 12, tzinfo=UTC))
     _marker(test_db, case, "B", datetime(2026, 8, 30, 10, 0, 19, tzinfo=UTC))
     _marker(test_db, case, "C", datetime(2026, 8, 30, 10, 0, 31, tzinfo=UTC))
 
+    headers = make_authenticated_headers()
     response = test_client.post(
         f"/api/v1/cases/{case.id}/correlation/run",
         json={
@@ -42,6 +45,7 @@ def test_run_correlation_endpoint_reproduces_the_a_b_c_scenario(test_client, tes
                 {"from_camera_id": "B", "to_camera_id": "C"},
             ]
         },
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -59,47 +63,60 @@ def test_run_correlation_endpoint_reproduces_the_a_b_c_scenario(test_client, tes
 
 
 def test_run_correlation_endpoint_without_topology_reports_it_unavailable(
-    test_client, test_db
+    test_client, test_db, make_authenticated_headers
 ) -> None:
     case = _make_case(test_db)
     _marker(test_db, case, "A", datetime(2026, 8, 30, 10, 0, 12, tzinfo=UTC))
     _marker(test_db, case, "B", datetime(2026, 8, 30, 10, 0, 19, tzinfo=UTC))
 
-    response = test_client.post(f"/api/v1/cases/{case.id}/correlation/run", json={})
+    headers = make_authenticated_headers()
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/correlation/run", json={}, headers=headers
+    )
 
     assert response.status_code == 200
     data = response.json()
     assert data["topology_configured"] is False
 
 
-def test_run_correlation_endpoint_outside_window_yields_no_candidates(test_client, test_db) -> None:
+def test_run_correlation_endpoint_outside_window_yields_no_candidates(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     _marker(test_db, case, "A", datetime(2026, 8, 30, 10, 0, 12, tzinfo=UTC))
     _marker(test_db, case, "D", datetime(2026, 8, 30, 10, 10, 0, tzinfo=UTC))
 
-    response = test_client.post(f"/api/v1/cases/{case.id}/correlation/run", json={})
+    headers = make_authenticated_headers()
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/correlation/run", json={}, headers=headers
+    )
 
     assert response.status_code == 200
     assert response.json()["candidates"] == []
 
 
-def test_run_correlation_endpoint_missing_case_returns_404(test_client) -> None:
-    response = test_client.post("/api/v1/cases/999999/correlation/run", json={})
+def test_run_correlation_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    headers = make_authenticated_headers()
+    response = test_client.post("/api/v1/cases/999999/correlation/run", json={}, headers=headers)
     assert response.status_code == 404
 
 
 def test_list_correlation_events_endpoint_returns_persisted_candidates(
-    test_client, test_db
+    test_client, test_db, make_authenticated_headers
 ) -> None:
     case = _make_case(test_db)
     _marker(test_db, case, "A", datetime(2026, 8, 30, 10, 0, 12, tzinfo=UTC))
     _marker(test_db, case, "B", datetime(2026, 8, 30, 10, 0, 19, tzinfo=UTC))
+    headers = make_authenticated_headers()
     test_client.post(
         f"/api/v1/cases/{case.id}/correlation/run",
         json={"topology": [{"from_camera_id": "A", "to_camera_id": "B"}]},
+        headers=headers,
     )
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/correlation/events")
+    response = test_client.get(f"/api/v1/cases/{case.id}/correlation/events", headers=headers)
 
     assert response.status_code == 200
     events = response.json()
@@ -107,6 +124,9 @@ def test_list_correlation_events_endpoint_returns_persisted_candidates(
     assert events[0]["event_ids"]
 
 
-def test_list_correlation_events_endpoint_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/correlation/events")
+def test_list_correlation_events_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    headers = make_authenticated_headers()
+    response = test_client.get("/api/v1/cases/999999/correlation/events", headers=headers)
     assert response.status_code == 404

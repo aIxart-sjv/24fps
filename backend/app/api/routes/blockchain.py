@@ -14,10 +14,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, require_case_access
 from app.blockchain.provider import AnchorSubmissionError, BlockchainProviderNotConfiguredError
 from app.core.blockchain_manager import BlockchainManager, ChainNotValidForAnchoringError
-from app.core.case_manager import CaseManager
-from app.models import BlockchainAnchor
+from app.core.case_authorization_service import CaseAccessDeniedError, CaseAuthorizationService
+from app.models import BlockchainAnchor, Case, User
 from app.schemas.blockchain import (
     AnchorCreateRequest,
     AnchorVerifyRequest,
@@ -49,13 +50,13 @@ def _anchor_response(anchor: BlockchainAnchor) -> BlockchainAnchorResponse:
 
 @router.post("/cases/{case_id}/blockchain/anchor", response_model=BlockchainAnchorResponse)
 def create_blockchain_anchor(
-    case_id: int, body: AnchorCreateRequest, db: Session = Depends(get_db)
+    case_id: int,
+    body: AnchorCreateRequest,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> BlockchainAnchorResponse:
     """Anchor a case's current, verified Phase 16 audit chain state."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     try:
         anchor = BlockchainManager.create_anchor(db, case_id=case_id, reason=body.reason)
     except ChainNotValidForAnchoringError as exc:
@@ -71,27 +72,45 @@ def create_blockchain_anchor(
 
 @router.get("/cases/{case_id}/blockchain/anchors", response_model=list[BlockchainAnchorResponse])
 def list_blockchain_anchors(
-    case_id: int, db: Session = Depends(get_db)
+    case_id: int,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> list[BlockchainAnchorResponse]:
     """List every anchor ever recorded for a case, oldest first. Never
     just "the latest" -- every prior anchor is retained."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     anchors = BlockchainManager.list_anchors(db, case_id)
     return [_anchor_response(a) for a in anchors]
 
 
 @router.post("/blockchain/verify", response_model=AnchorVerifyResponse)
 def verify_blockchain_anchor(
-    body: AnchorVerifyRequest, db: Session = Depends(get_db)
+    body: AnchorVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> AnchorVerifyResponse:
-    """Verify a recorded anchor against the case's current local chain state."""
+    """Verify a recorded anchor against the case's current local chain state.
+
+    Not a `require_case_access`-style path-param dependency (there is no
+    `case_id` path segment to key one on -- only an opaque `anchor_id` in
+    the body), so this resolves the anchor's owning case afterward and
+    authorizes against that instead. The response includes real case
+    state (`case_id`, hash values), so an anchor ID alone must not be
+    enough to read it -- same IDOR concern task section 18 names for
+    every other case-scoped resource.
+    """
     try:
         result = BlockchainManager.verify_anchor(db, anchor_id=body.anchor_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if result.case_id is not None:
+        try:
+            CaseAuthorizationService.require_case_access(db, current_user, result.case_id)
+        except CaseAccessDeniedError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     chain_failure = (
         ChainFailureDetail(

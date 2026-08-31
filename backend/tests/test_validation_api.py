@@ -39,7 +39,9 @@ def _make_recording(test_db, case: Case) -> tuple[Recording, Artifact]:
     return recording, artifact
 
 
-def test_create_validation_job_endpoint_runs_object_detection(test_client, test_db) -> None:
+def test_create_validation_job_endpoint_runs_object_detection(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     recording, artifact = _make_recording(test_db, case)
     ValidationManager.create_ground_truth(
@@ -78,6 +80,7 @@ def test_create_validation_job_endpoint_runs_object_detection(test_client, test_
             "validation_type": "object_detection",
             "dataset_id": "DS-API-OBJ",
         },
+        headers=make_authenticated_headers(),
     )
 
     assert response.status_code == 200
@@ -89,24 +92,32 @@ def test_create_validation_job_endpoint_runs_object_detection(test_client, test_
     assert "object_detection.precision" in metric_names
 
 
-def test_create_validation_job_endpoint_missing_case_returns_404(test_client) -> None:
+def test_create_validation_job_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
     response = test_client.post(
         "/api/v1/validation/jobs",
         json={"case_id": 999999, "validation_type": "object_detection", "dataset_id": "x"},
+        headers=make_authenticated_headers(),
     )
     assert response.status_code == 404
 
 
-def test_create_validation_job_endpoint_invalid_type_returns_400(test_client, test_db) -> None:
+def test_create_validation_job_endpoint_invalid_type_returns_400(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     response = test_client.post(
         "/api/v1/validation/jobs",
         json={"case_id": case.id, "validation_type": "not_a_real_type", "dataset_id": "x"},
+        headers=make_authenticated_headers(),
     )
     assert response.status_code == 400
 
 
-def test_list_case_validation_endpoint_returns_persisted_metrics(test_client, test_db) -> None:
+def test_list_case_validation_endpoint_returns_persisted_metrics(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     recording, _ = _make_recording(test_db, case)
     ValidationManager.create_ground_truth(
@@ -118,12 +129,14 @@ def test_list_case_validation_endpoint_returns_persisted_metrics(test_client, te
         timestamp=_T0,
         source_reference="controlled test",
     )
+    headers = make_authenticated_headers()
     test_client.post(
         "/api/v1/validation/jobs",
         json={"case_id": case.id, "validation_type": "timeline", "dataset_id": "DS-API-TL"},
+        headers=headers,
     )
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/validation")
+    response = test_client.get(f"/api/v1/cases/{case.id}/validation", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -131,7 +144,9 @@ def test_list_case_validation_endpoint_returns_persisted_metrics(test_client, te
     assert all(m["validation_type"] == "timeline" for m in data)
 
 
-def test_list_case_validation_endpoint_filters_by_validation_type(test_client, test_db) -> None:
+def test_list_case_validation_endpoint_filters_by_validation_type(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     recording, _ = _make_recording(test_db, case)
     ValidationManager.create_ground_truth(
@@ -143,22 +158,32 @@ def test_list_case_validation_endpoint_filters_by_validation_type(test_client, t
         timestamp=_T0,
         source_reference="controlled test",
     )
+    headers = make_authenticated_headers()
     test_client.post(
         "/api/v1/validation/jobs",
         json={"case_id": case.id, "validation_type": "timeline", "dataset_id": "DS-API-TL2"},
+        headers=headers,
     )
 
     matching = test_client.get(
-        f"/api/v1/cases/{case.id}/validation", params={"validation_type": "timeline"}
+        f"/api/v1/cases/{case.id}/validation",
+        params={"validation_type": "timeline"},
+        headers=headers,
     )
     non_matching = test_client.get(
-        f"/api/v1/cases/{case.id}/validation", params={"validation_type": "recovery"}
+        f"/api/v1/cases/{case.id}/validation",
+        params={"validation_type": "recovery"},
+        headers=headers,
     )
 
     assert len(matching.json()) > 0
     assert non_matching.json() == []
 
 
-def test_list_case_validation_endpoint_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/validation")
+def test_list_case_validation_endpoint_missing_case_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    response = test_client.get(
+        "/api/v1/cases/999999/validation", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404

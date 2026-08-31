@@ -24,7 +24,9 @@ def _make_case(test_db, case_id: str = "API-CHAIN-NOCONFIG-1") -> Case:
     return CaseManager.create_case(test_db, CaseCreateRequest(case_id=case_id, name="No config"))
 
 
-def test_create_anchor_with_no_provider_configured_returns_503(test_client, test_db) -> None:
+def test_create_anchor_with_no_provider_configured_returns_503(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     ProvenanceManager.record_event(
         test_db,
@@ -35,12 +37,18 @@ def test_create_anchor_with_no_provider_configured_returns_503(test_client, test
         status=JobStatus.COMPLETED,
     )
 
-    response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor",
+        json={},
+        headers=make_authenticated_headers(),
+    )
 
     assert response.status_code == 503
 
 
-def test_audit_endpoints_still_work_without_blockchain_configured(test_client, test_db) -> None:
+def test_audit_endpoints_still_work_without_blockchain_configured(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     """Phase 16 local hash-chain integrity is independent of blockchain
     availability (Master Specification Section 42's closing rule)."""
     case = _make_case(test_db)
@@ -53,10 +61,11 @@ def test_audit_endpoints_still_work_without_blockchain_configured(test_client, t
         status=JobStatus.COMPLETED,
     )
 
-    audit_response = test_client.get(f"/api/v1/cases/{case.id}/audit")
+    headers = make_authenticated_headers()
+    audit_response = test_client.get(f"/api/v1/cases/{case.id}/audit", headers=headers)
     assert audit_response.status_code == 200
     assert len(audit_response.json()) == 1
 
-    verify_response = test_client.get(f"/api/v1/cases/{case.id}/audit/verify")
+    verify_response = test_client.get(f"/api/v1/cases/{case.id}/audit/verify", headers=headers)
     assert verify_response.status_code == 200
     assert verify_response.json()["valid"] is True

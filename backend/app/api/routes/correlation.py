@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.case_manager import CaseManager
+from app.api.deps import require_case_access
 from app.core.correlation_manager import CorrelationManager
-from app.models import TimelineEvent
+from app.models import Case, TimelineEvent
 from app.schemas.timeline import (
     CorrelationCandidateResponse,
     CorrelationRunRequest,
@@ -24,13 +24,6 @@ from app.storage.db import get_db
 from app.timeline.correlation import CameraTopology
 
 router = APIRouter()
-
-
-def _require_case(db: Session, case_id: int) -> None:
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
 
 
 def _candidate_response(event: TimelineEvent) -> CorrelationCandidateResponse:
@@ -74,7 +67,10 @@ def _candidate_response(event: TimelineEvent) -> CorrelationCandidateResponse:
 
 @router.post("/cases/{case_id}/correlation/run", response_model=CorrelationRunResponse)
 def run_correlation(
-    case_id: int, request: CorrelationRunRequest, db: Session = Depends(get_db)
+    case_id: int,
+    request: CorrelationRunRequest,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> CorrelationRunResponse:
     """Run cross-camera correlation over a case's current timeline events and persist results.
 
@@ -83,7 +79,7 @@ def run_correlation(
     of identity"). Camera topology is only ever used if explicitly
     supplied in `request.topology` — never inferred from camera numbering.
     """
-    _require_case(db, case_id)
+    del case
 
     topology: CameraTopology | None = None
     if request.topology:
@@ -115,9 +111,11 @@ def run_correlation(
     "/cases/{case_id}/correlation/events", response_model=list[CorrelationCandidateResponse]
 )
 def list_correlation_events(
-    case_id: int, db: Session = Depends(get_db)
+    case_id: int,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> list[CorrelationCandidateResponse]:
     """List previously persisted correlation candidates for a case."""
-    _require_case(db, case_id)
+    del case
     events = CorrelationManager.list_correlations(db, case_id)
     return [_candidate_response(event) for event in events]

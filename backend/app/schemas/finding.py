@@ -31,6 +31,20 @@ class FindingResponse(BaseModel):
     resolved_at: datetime | None
     resolved_by: str | None
     resolution_notes: str | None
+    #: The recording this finding concerns, resolved from `recording_id`
+    #: directly when set, else from `source_reference` (an AI job's
+    #: earliest result, a correlated event, or a recovery result) --
+    #: `None` when this finding concerns evidence/case-wide state with no
+    #: single recording (e.g. an integrity mismatch or a missing
+    #: ground-truth dataset). Phase 24 task scope, "Officer Notification
+    #: Flow": lets a notification jump directly to the relevant video.
+    resolved_recording_id: int | None
+    #: The best-available real timestamp for `resolved_recording_id`
+    #: (an AI detection's own timestamp when available, else the
+    #: recording's normalized/original start) -- never estimated or
+    #: fabricated; `None` whenever nothing better than "this evidence
+    #: item" is resolvable.
+    resolved_timestamp: datetime | None
 
 
 class FindingUpdateRequest(BaseModel):

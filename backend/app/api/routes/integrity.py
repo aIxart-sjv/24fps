@@ -8,7 +8,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_case_access_for_evidence
 from app.integrity.hash_verification import IntegrityManager
+from app.models import Evidence
 from app.schemas.hash import HashResponse
 from app.storage.db import get_db
 
@@ -20,8 +22,13 @@ router = APIRouter()
     response_model=list[HashResponse],
     status_code=status.HTTP_201_CREATED,
 )
-def hash_evidence(evidence_id: int, db: Session = Depends(get_db)) -> list[HashResponse]:
+def hash_evidence(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
+) -> list[HashResponse]:
     """Compute and store the initial SHA-256 and MD5 hashes for evidence."""
+    del evidence
     try:
         hashes = IntegrityManager.hash_evidence(db, evidence_id)
     except FileNotFoundError as exc:
@@ -32,8 +39,13 @@ def hash_evidence(evidence_id: int, db: Session = Depends(get_db)) -> list[HashR
 
 
 @router.post("/evidence/{evidence_id}/verify", response_model=list[HashResponse])
-def verify_evidence(evidence_id: int, db: Session = Depends(get_db)) -> list[HashResponse]:
+def verify_evidence(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
+) -> list[HashResponse]:
     """Recompute evidence hashes and compare them against stored values."""
+    del evidence
     try:
         hashes = IntegrityManager.verify_evidence(db, evidence_id)
     except FileNotFoundError as exc:
@@ -44,8 +56,13 @@ def verify_evidence(evidence_id: int, db: Session = Depends(get_db)) -> list[Has
 
 
 @router.get("/evidence/{evidence_id}/hashes", response_model=list[HashResponse])
-def list_evidence_hashes(evidence_id: int, db: Session = Depends(get_db)) -> list[HashResponse]:
+def list_evidence_hashes(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
+) -> list[HashResponse]:
     """List all stored hashes for an evidence item."""
+    del evidence
     try:
         hashes = IntegrityManager.list_evidence_hashes(db, evidence_id)
     except ValueError as exc:

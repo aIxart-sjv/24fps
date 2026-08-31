@@ -9,10 +9,10 @@ not an HTTP-exposed one (see that module's docstring).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import extract_bearer_token, get_current_user
 from app.core.auth_manager import AuthManager
 from app.models import User
 from app.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse
@@ -50,3 +50,22 @@ def get_me(current_user: User = Depends(get_current_user)) -> CurrentUserRespons
         display_name=current_user.display_name,
         role=current_user.role.value,
     )
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke the caller's current session before its natural expiry.
+
+    Phase 23 gap assessment: `AuthManager.revoke_session` (Phase 21)
+    existed with no HTTP route -- the frontend had no way to actually log
+    out short of discarding its token client-side, which leaves the
+    session valid server-side until it naturally expires. Idempotent:
+    an already-revoked or unknown token still returns 204 (task Phase 23
+    scope, "Authentication Integration": logout is a caller-side
+    intent, not a query whose failure should be surfaced as an error).
+    """
+    token = extract_bearer_token(authorization)
+    AuthManager.revoke_session(db, token)

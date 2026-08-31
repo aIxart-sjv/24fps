@@ -27,9 +27,13 @@ def _report_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     get_settings.cache_clear()
 
 
-def test_create_reports_endpoint_default_both_formats(test_client, test_db) -> None:
+def test_create_reports_endpoint_default_both_formats(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     rich = build_rich_case(test_db)
-    response = test_client.post(f"/api/v1/cases/{rich.case.id}/reports", json={})
+    response = test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports", json={}, headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -41,52 +45,90 @@ def test_create_reports_endpoint_default_both_formats(test_client, test_db) -> N
         assert "path" not in entry  # never exposes a machine-local filesystem path
 
 
-def test_create_reports_endpoint_single_format(test_client, test_db) -> None:
+def test_create_reports_endpoint_single_format(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     rich = build_rich_case(test_db)
-    response = test_client.post(f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]})
+    response = test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports",
+        json={"formats": ["json"]},
+        headers=make_authenticated_headers(),
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["report_type"] == "json"
 
 
-def test_create_reports_missing_case_returns_404(test_client) -> None:
-    response = test_client.post("/api/v1/cases/999999/reports", json={})
+def test_list_case_reports_endpoint(test_client, test_db, make_authenticated_headers) -> None:
+    rich = build_rich_case(test_db)
+    headers = make_authenticated_headers()
+    test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]}, headers=headers
+    )
+    test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["pdf"]}, headers=headers
+    )
+
+    response = test_client.get(f"/api/v1/cases/{rich.case.id}/reports", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert {d["report_type"] for d in data} == {"json", "pdf"}
+
+
+def test_list_case_reports_unknown_case_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get("/api/v1/cases/999999/reports", headers=make_authenticated_headers())
     assert response.status_code == 404
 
 
-def test_create_reports_unsupported_format_returns_400(test_client, test_db) -> None:
+def test_create_reports_missing_case_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.post(
+        "/api/v1/cases/999999/reports", json={}, headers=make_authenticated_headers()
+    )
+    assert response.status_code == 404
+
+
+def test_create_reports_unsupported_format_returns_400(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     rich = build_rich_case(test_db)
-    response = test_client.post(f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["csv"]})
+    response = test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports",
+        json={"formats": ["csv"]},
+        headers=make_authenticated_headers(),
+    )
     assert response.status_code == 400
 
 
-def test_get_report_endpoint(test_client, test_db) -> None:
+def test_get_report_endpoint(test_client, test_db, make_authenticated_headers) -> None:
     rich = build_rich_case(test_db)
+    headers = make_authenticated_headers()
     create_response = test_client.post(
-        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]}
+        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]}, headers=headers
     )
     report_id = create_response.json()[0]["id"]
 
-    response = test_client.get(f"/api/v1/reports/{report_id}")
+    response = test_client.get(f"/api/v1/reports/{report_id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["id"] == report_id
     assert response.json()["case_id"] == rich.case.id
 
 
-def test_get_report_missing_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/reports/999999")
+def test_get_report_missing_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get("/api/v1/reports/999999", headers=make_authenticated_headers())
     assert response.status_code == 404
 
 
-def test_download_json_report(test_client, test_db) -> None:
+def test_download_json_report(test_client, test_db, make_authenticated_headers) -> None:
     rich = build_rich_case(test_db)
+    headers = make_authenticated_headers()
     create_response = test_client.post(
-        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]}
+        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]}, headers=headers
     )
     report = create_response.json()[0]
 
-    response = test_client.get(f"/api/v1/reports/{report['id']}/download")
+    response = test_client.get(f"/api/v1/reports/{report['id']}/download", headers=headers)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert sha256_bytes(response.content) == report["report_hash"]
@@ -97,32 +139,39 @@ def test_download_json_report(test_client, test_db) -> None:
     assert parsed["case"]["case_identifier"] == rich.case.case_id
 
 
-def test_download_pdf_report(test_client, test_db) -> None:
+def test_download_pdf_report(test_client, test_db, make_authenticated_headers) -> None:
     rich = build_rich_case(test_db)
+    headers = make_authenticated_headers()
     create_response = test_client.post(
-        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["pdf"]}
+        f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["pdf"]}, headers=headers
     )
     report = create_response.json()[0]
 
-    response = test_client.get(f"/api/v1/reports/{report['id']}/download")
+    response = test_client.get(f"/api/v1/reports/{report['id']}/download", headers=headers)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-")
     assert sha256_bytes(response.content) == report["report_hash"]
 
 
-def test_download_report_missing_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/reports/999999/download")
+def test_download_report_missing_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get(
+        "/api/v1/reports/999999/download", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404
 
 
 def test_report_response_never_includes_blockchain_or_report_body_fields(
-    test_client, test_db
+    test_client, test_db, make_authenticated_headers
 ) -> None:
     """The metadata response is not the report body itself -- confirm it
     stays a lightweight envelope, never the full assembled content."""
     rich = build_rich_case(test_db)
-    response = test_client.post(f"/api/v1/cases/{rich.case.id}/reports", json={"formats": ["json"]})
+    response = test_client.post(
+        f"/api/v1/cases/{rich.case.id}/reports",
+        json={"formats": ["json"]},
+        headers=make_authenticated_headers(),
+    )
     entry = response.json()[0]
     assert "evidence" not in entry
     assert "limitations" not in entry

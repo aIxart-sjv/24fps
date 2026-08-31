@@ -19,7 +19,7 @@ from app.storage.db import get_db
 router = APIRouter()
 
 
-def _notification_response(notification: Notification) -> NotificationResponse:
+def _notification_response(db: Session, notification: Notification) -> NotificationResponse:
     return NotificationResponse(
         id=notification.id,
         recipient_user_id=notification.recipient_user_id,
@@ -27,7 +27,7 @@ def _notification_response(notification: Notification) -> NotificationResponse:
         created_at=notification.created_at,
         read_at=notification.read_at,
         acknowledged_at=notification.acknowledged_at,
-        finding=_finding_response(notification.finding),
+        finding=_finding_response(db, notification.finding),
     )
 
 
@@ -47,7 +47,7 @@ def list_notifications(
     notifications = NotificationManager.list_notifications(
         db, current_user.id, unread_only=unread_only
     )
-    return [_notification_response(n) for n in notifications]
+    return [_notification_response(db, n) for n in notifications]
 
 
 @router.patch("/notifications/{notification_id}", response_model=NotificationResponse)
@@ -68,4 +68,4 @@ def update_notification(
         notification = NotificationManager.mark_acknowledged(db, notification)
     elif request.read:
         notification = NotificationManager.mark_read(db, notification)
-    return _notification_response(notification)
+    return _notification_response(db, notification)

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.ai_result import AIResult, AITrack, MotionEvent
     from app.models.audit import ProcessingEvent
     from app.models.blockchain import BlockchainAnchor
+    from app.models.case_access import CaseUserAccess
     from app.models.evidence import Evidence
     from app.models.job import Job
     from app.models.report import Report
@@ -96,6 +97,12 @@ class Case(Base):
     )
     reports: Mapped[list[Report]] = relationship(
         "Report", back_populates="case", cascade="all, delete-orphan"
+    )
+    user_access_grants: Mapped[list[CaseUserAccess]] = relationship(
+        "CaseUserAccess",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        foreign_keys="CaseUserAccess.case_id",
     )
 
     def __repr__(self) -> str:

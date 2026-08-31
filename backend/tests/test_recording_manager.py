@@ -145,6 +145,32 @@ def test_enumerate_recordings_persists_recording_and_baseline_metadata(db_sessio
     assert metadata["raw_timestamp"] == "100"
 
 
+def test_enumerate_recordings_confirms_vendor_onto_device(db_session_and_engine):
+    """Phase 24 task scope, "Acquisition Metadata -- Fix Accuracy": a
+    recognized CP Plus structure must propagate onto `Device.vendor`, not
+    just onto recording-level metadata -- this is what the acquisition API
+    actually reads."""
+    db, evidence_root = db_session_and_engine
+    case = _make_case(db)
+    content = _synthetic_cpv_bytes(start_counter=1, end_counter=2, with_video=True)
+    evidence = _register_evidence(
+        db, case, evidence_root, "NVR_ch1_main_20260101120000_20260101120010.cpv", content
+    )
+
+    # Simulate the pipeline's own ordering: generic identification runs
+    # before enumeration and leaves vendor unknown for a native export.
+    device, generic_result = EvidenceManager.identify_device(db, evidence.id)
+    assert device.vendor is None
+    assert generic_result.confidence < 1.0
+
+    RecordingManager.enumerate_recordings(db, evidence.id)
+
+    db.refresh(device)
+    assert device.vendor == "CP Plus"
+    assert device.identification_method == "cp_plus_structure_signature"
+    assert device.confidence == 1.0
+
+
 def test_enumerate_recordings_is_idempotent(db_session_and_engine):
     db, evidence_root = db_session_and_engine
     case = _make_case(db)
@@ -322,3 +348,34 @@ def test_extract_recording_raises_for_missing_recording(db_session_and_engine):
     db, _evidence_root = db_session_and_engine
     with pytest.raises(ValueError, match="not found"):
         RecordingManager.extract_recording(db, 999)
+
+
+# --- refresh_media_metadata ---
+# The full backfill-from-real-media path (successful extraction already
+# populates width/height/fps/duration; refresh_media_metadata recovers the
+# same real values for a stale row without re-muxing/re-transcoding) is
+# covered against real FFmpeg output by
+# tests/test_cp_plus_extraction_real_evidence_integration.py. These two
+# only cover the error paths that don't need real evidence/FFmpeg.
+
+
+def test_refresh_media_metadata_raises_for_missing_recording(db_session_and_engine):
+    db, _evidence_root = db_session_and_engine
+    with pytest.raises(ValueError, match="not found"):
+        RecordingManager.refresh_media_metadata(db, 999)
+
+
+def test_refresh_media_metadata_raises_when_no_derived_artifact_exists(db_session_and_engine):
+    """A recording that was only enumerated, never extracted, has no
+    master/preview artifact to probe -- refresh must say so honestly
+    rather than fabricate a value or silently no-op."""
+    db, evidence_root = db_session_and_engine
+    case = _make_case(db)
+    content = _synthetic_cpv_bytes(start_counter=1, end_counter=2, with_video=True)
+    evidence = _register_evidence(
+        db, case, evidence_root, "NVR_ch1_main_20260101120000_20260101120010.cpv", content
+    )
+    recording = RecordingManager.enumerate_recordings(db, evidence.id)[0]
+
+    with pytest.raises(ValueError, match="no derived master/preview media artifact"):
+        RecordingManager.refresh_media_metadata(db, recording.id)

@@ -15,13 +15,11 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
 
-from app.core.job_manager import JobManager
+from app.api.deps import require_case_access_for_job
 from app.models import Job
 from app.schemas.job import JobResponse
-from app.storage.db import get_db
 
 router = APIRouter()
 
@@ -54,11 +52,6 @@ def _job_response(job: Job) -> JobResponse:
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-def get_job(job_id: int, db: Session = Depends(get_db)) -> JobResponse:
+def get_job(job: Job = Depends(require_case_access_for_job)) -> JobResponse:
     """Retrieve one processing job by ID, regardless of its `job_type`."""
-    job = JobManager.get_job(db, job_id)
-    if job is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Job with id {job_id} not found"
-        )
     return _job_response(job)

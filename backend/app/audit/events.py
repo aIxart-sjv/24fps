@@ -63,6 +63,17 @@ class ProcessingOperation(str, Enum):
     #: case's audit history can distinguish "a pipeline stage ran" from
     #: "that stage's result was judged worth an examiner's attention".
     FINDING_GENERATION = "finding_generation"
+    #: Phase 25: an administrator granting or revoking one user's access
+    #: to a case (`app.core.case_authorization_service.
+    #: CaseAuthorizationService`). One value covers both directions --
+    #: `grant`/`revoke` plus the target user are recorded in `parameters`
+    #: (matching the existing coarse-operation/detailed-parameters split
+    #: every other operation here already uses) -- so a case's audit
+    #: history shows exactly who could open it and when that changed, and
+    #: participates in the same hash-linked chain as every other event
+    #: (task section 11: tampering with an access-change event must be
+    #: detectable the same way as any other).
+    CASE_ACCESS_CHANGE = "case_access_change"
 
 
 class ActorType(str, Enum):

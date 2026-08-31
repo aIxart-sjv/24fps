@@ -8,10 +8,17 @@ from app.models.audit import ProcessingEvent
 from app.models.auth_session import UserSession
 from app.models.blockchain import BlockchainAnchor
 from app.models.case import Case, CaseStatus
+from app.models.case_access import CaseAccessStatus, CaseUserAccess
 from app.models.custody import CustodyTransfer, CustodyTransferStatus, CustodyTransferType
 from app.models.device import Device
 from app.models.evidence import Evidence
-from app.models.finding import Finding, FindingConfidence, FindingSeverity, FindingStatus, FindingType
+from app.models.finding import (
+    Finding,
+    FindingConfidence,
+    FindingSeverity,
+    FindingStatus,
+    FindingType,
+)
 from app.models.hash import EvidenceHash, HashAlgorithm, VerificationStatus
 from app.models.job import (
     AI_JOB_TYPE,
@@ -37,7 +44,9 @@ __all__ = [
     "Artifact",
     "BlockchainAnchor",
     "Case",
+    "CaseAccessStatus",
     "CaseStatus",
+    "CaseUserAccess",
     "CustodyTransfer",
     "CustodyTransferStatus",
     "CustodyTransferType",

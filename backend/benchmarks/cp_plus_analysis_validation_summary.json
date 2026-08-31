@@ -1,0 +1,824 @@
+{
+  "root_job_id": 1,
+  "metrics": [
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #2",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #2",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #3",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #3",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #6",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #6",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #7",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #9",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #9",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #10",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #10",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #13",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #13",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #14",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #16",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #16",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #17",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #17",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #20",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #20",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #21",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #23",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #23",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #24",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #24",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #27",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #27",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #28",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #30",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #30",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #31",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #31",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #34",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #34",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #35",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #37",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #37",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #38",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #38",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #41",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #41",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #42",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #44",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #44",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #45",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #45",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #48",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #48",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #49",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #51",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #51",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #52",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #52",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #55",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #55",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #56",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #58",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #58",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #59",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #59",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #62",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #62",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #63",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #65",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #65",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #66",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #66",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #69",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #69",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #70",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #72",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #72",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #73",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #73",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #76",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #76",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #77",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #79",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #79",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #80",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #80",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #83",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #83",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #84",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "SHA256 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #86",
+      "notes": null
+    },
+    {
+      "module": "Integrity verification",
+      "metric": "MD5 verification",
+      "value": "not_verified",
+      "status": "N/A",
+      "basis": "hash computed at intake; no later recomputation to compare against yet",
+      "source": "job #86",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Vendor identification",
+      "value": "CP Plus",
+      "status": "VALIDATED",
+      "basis": "deterministic vendor container-structure signature match",
+      "source": "job #87",
+      "notes": null
+    },
+    {
+      "module": "Identification",
+      "metric": "Identification confidence",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "identification confidence score, not detection accuracy",
+      "source": "job #87",
+      "notes": "Confidence describes basis strength, not a correctness rate."
+    },
+    {
+      "module": "Recovery",
+      "metric": "Frame continuity",
+      "value": "1.00",
+      "status": "OBSERVATION",
+      "basis": "measured directly from the recovered frame counter sequence; no independent ground truth",
+      "source": "job #90",
+      "notes": null
+    },
+    {
+      "module": "Recovery",
+      "metric": "Recovery method reliability",
+      "value": "vendor_damaged_recovery",
+      "status": "CONTROLLED",
+      "basis": "demonstrated against real CP Plus evidence's own genuinely truncated record",
+      "source": "job #90",
+      "notes": null
+    },
+    {
+      "module": "Timestamp normalization",
+      "metric": "Timestamp normalization",
+      "value": "unknown",
+      "status": "N/A",
+      "basis": "no usable original timestamp or timezone",
+      "source": "job #91",
+      "notes": null
+    }
+  ]
+}

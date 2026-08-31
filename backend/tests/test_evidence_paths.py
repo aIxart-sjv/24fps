@@ -8,8 +8,9 @@ from pathlib import Path
 import pytest
 
 from app.config import get_settings
+from app.core.auth_manager import AuthManager
 from app.core.evidence_manager import EvidenceManager
-from app.models import Case, CaseStatus
+from app.models import Case, CaseStatus, UserRole
 from app.schemas.evidence import EvidenceCreateRequest
 from app.utils.paths import resolve_evidence_source_path
 
@@ -109,6 +110,23 @@ def test_register_evidence_api_rejects_unsafe_source_path(
     test_client, test_db, evidence_root: Path
 ):
     """The existing registration endpoint returns a client error for unsafe paths."""
+    # ADMIN (not OFFICER): this test exercises unsafe-source-path
+    # rejection, not case-access scoping -- an admin's unconditional case
+    # access keeps that the only thing under test (Phase 25 requires an
+    # OFFICER to hold an explicit `CaseUserAccess` grant, which is
+    # orthogonal to what this test checks).
+    AuthManager.create_user(
+        test_db,
+        username="officer_paths",
+        display_name="Officer Paths",
+        password="password123",
+        role=UserRole.ADMIN,
+    )
+    login_resp = test_client.post(
+        "/api/v1/auth/login", json={"username": "officer_paths", "password": "password123"}
+    )
+    headers = {"Authorization": f"Bearer {login_resp.json()['token']}"}
+
     case = Case(case_id="PATH-API-001", name="Path Safety API", status=CaseStatus.DRAFT)
     test_db.add(case)
     test_db.commit()
@@ -120,6 +138,7 @@ def test_register_evidence_api_rejects_unsafe_source_path(
             "source_type": "forensic_image",
             "source_path": "../outside.dd",
         },
+        headers=headers,
     )
 
     assert response.status_code == 400

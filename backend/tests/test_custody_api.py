@@ -10,6 +10,7 @@ through `test_client`.
 from __future__ import annotations
 
 from app.core.auth_manager import AuthManager
+from app.core.case_authorization_service import CaseAuthorizationService
 from app.core.case_manager import CaseManager
 from app.core.evidence_manager import EvidenceManager
 from app.models import UserRole
@@ -33,6 +34,22 @@ def _make_user(db, username: str, password: str = "password123", role: UserRole 
     return AuthManager.create_user(
         db, username=username, display_name=username.title(), password=password, role=role
     )
+
+
+def _grant_case_access(db, case, *users) -> None:
+    """Phase 25: custody routes are also case-access-protected now -- grant
+    every officer/lab-personnel participant in a custody scenario access
+    to the scenario's case, mirroring how they'd have been assigned to it
+    by an admin in real use before ever touching physical custody."""
+    admin = AuthManager.create_user(
+        db,
+        username=f"admin_for_{case.case_id}",
+        display_name="Access Admin",
+        password="password123",
+        role=UserRole.ADMIN,
+    )
+    for user in users:
+        CaseAuthorizationService.grant_case_access(db, admin, user_id=user.id, case_id=case.id)
 
 
 def _auth_headers(test_client, username: str, password: str = "password123") -> dict[str, str]:
@@ -98,6 +115,7 @@ class TestCustodyApiFullLifecycle:
         case, evidence = _make_case_and_evidence(test_db, "CASE-LIFECYCLE")
         officer_a = _make_user(test_db, "life_a")
         officer_b = _make_user(test_db, "life_b")
+        _grant_case_access(test_db, case, officer_a, officer_b)
         headers_a = _auth_headers(test_client, "life_a")
         headers_b = _auth_headers(test_client, "life_b")
 
@@ -157,7 +175,7 @@ class TestCustodyApiFullLifecycle:
         assert len(resp.json()) == 2
 
         # audit chain (Phase 15/16 route) reflects the custody events
-        resp = test_client.get(f"/api/v1/cases/{case.id}/audit/verify")
+        resp = test_client.get(f"/api/v1/cases/{case.id}/audit/verify", headers=headers_a)
         assert resp.status_code == 200
         assert resp.json()["valid"] is True
 
@@ -166,6 +184,7 @@ class TestCustodyApiFullLifecycle:
         officer_a = _make_user(test_db, "wr_a")
         officer_b = _make_user(test_db, "wr_b")
         _make_user(test_db, "wr_stranger")
+        _grant_case_access(test_db, case, officer_a, officer_b)
         headers_a = _auth_headers(test_client, "wr_a")
         headers_stranger = _auth_headers(test_client, "wr_stranger")
 
@@ -223,6 +242,7 @@ class TestCustodyApiFullLifecycle:
         case, evidence = _make_case_and_evidence(test_db, "CASE-CANCEL")
         officer_a = _make_user(test_db, "cnl_a")
         officer_b = _make_user(test_db, "cnl_b")
+        _grant_case_access(test_db, case, officer_a, officer_b)
         headers_a = _auth_headers(test_client, "cnl_a")
         headers_b = _auth_headers(test_client, "cnl_b")
 
@@ -249,6 +269,7 @@ class TestCustodyApiFullLifecycle:
         case, evidence = _make_case_and_evidence(test_db, "CASE-LAB-API")
         officer = _make_user(test_db, "lab_api_officer")
         lab_tech = _make_user(test_db, "lab_api_tech", role=UserRole.LAB_PERSONNEL)
+        _grant_case_access(test_db, case, officer, lab_tech)
         headers_officer = _auth_headers(test_client, "lab_api_officer")
         headers_lab = _auth_headers(test_client, "lab_api_tech")
 
@@ -274,6 +295,7 @@ class TestCustodyApiFullLifecycle:
         case, evidence = _make_case_and_evidence(test_db, "CASE-REJECT-API")
         officer_a = _make_user(test_db, "rej_api_a")
         officer_b = _make_user(test_db, "rej_api_b")
+        _grant_case_access(test_db, case, officer_a, officer_b)
         headers_a = _auth_headers(test_client, "rej_api_a")
         headers_b = _auth_headers(test_client, "rej_api_b")
 

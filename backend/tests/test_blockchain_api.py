@@ -51,11 +51,13 @@ def _record(test_db, case: Case, operation: str) -> None:
     )
 
 
-def test_create_anchor_endpoint(test_client, test_db) -> None:
+def test_create_anchor_endpoint(test_client, test_db, make_authenticated_headers) -> None:
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
 
-    response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -68,38 +70,52 @@ def test_create_anchor_endpoint(test_client, test_db) -> None:
     assert data["verified_at"] is None
 
 
-def test_create_anchor_with_reason(test_client, test_db) -> None:
+def test_create_anchor_with_reason(test_client, test_db, make_authenticated_headers) -> None:
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
 
     response = test_client.post(
-        f"/api/v1/cases/{case.id}/blockchain/anchor", json={"reason": "case_closure"}
+        f"/api/v1/cases/{case.id}/blockchain/anchor",
+        json={"reason": "case_closure"},
+        headers=make_authenticated_headers(),
     )
 
     assert response.status_code == 200
     assert response.json()["reason"] == "case_closure"
 
 
-def test_create_anchor_missing_case_returns_404(test_client) -> None:
-    response = test_client.post("/api/v1/cases/999999/blockchain/anchor", json={})
+def test_create_anchor_missing_case_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.post(
+        "/api/v1/cases/999999/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
     assert response.status_code == 404
 
 
-def test_create_anchor_empty_chain_returns_400(test_client, test_db) -> None:
+def test_create_anchor_empty_chain_returns_400(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
-    response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
     assert response.status_code == 400
 
 
-def test_list_anchors_endpoint(test_client, test_db) -> None:
+def test_list_anchors_endpoint(test_client, test_db, make_authenticated_headers) -> None:
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
-    test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
 
     _record(test_db, case, ProcessingOperation.EXTRACTION.value)
-    test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
 
-    response = test_client.get(f"/api/v1/cases/{case.id}/blockchain/anchors")
+    response = test_client.get(
+        f"/api/v1/cases/{case.id}/blockchain/anchors", headers=make_authenticated_headers()
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -107,18 +123,26 @@ def test_list_anchors_endpoint(test_client, test_db) -> None:
     assert data[0]["id"] < data[1]["id"]
 
 
-def test_list_anchors_missing_case_returns_404(test_client) -> None:
-    response = test_client.get("/api/v1/cases/999999/blockchain/anchors")
+def test_list_anchors_missing_case_returns_404(test_client, make_authenticated_headers) -> None:
+    response = test_client.get(
+        "/api/v1/cases/999999/blockchain/anchors", headers=make_authenticated_headers()
+    )
     assert response.status_code == 404
 
 
-def test_verify_endpoint_valid(test_client, test_db) -> None:
+def test_verify_endpoint_valid(test_client, test_db, make_authenticated_headers) -> None:
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
-    create_response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    create_response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
     anchor_id = create_response.json()["id"]
 
-    response = test_client.post("/api/v1/blockchain/verify", json={"anchor_id": anchor_id})
+    response = test_client.post(
+        "/api/v1/blockchain/verify",
+        json={"anchor_id": anchor_id},
+        headers=make_authenticated_headers(),
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -127,10 +151,14 @@ def test_verify_endpoint_valid(test_client, test_db) -> None:
     assert data["chain_failure"] is None
 
 
-def test_verify_endpoint_detects_local_tamper(test_client, test_db) -> None:
+def test_verify_endpoint_detects_local_tamper(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
-    create_response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    create_response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
     anchor_id = create_response.json()["id"]
 
     from app.models import ProcessingEvent
@@ -143,7 +171,11 @@ def test_verify_endpoint_detects_local_tamper(test_client, test_db) -> None:
     row.status = "failed"
     test_db.commit()
 
-    response = test_client.post("/api/v1/blockchain/verify", json={"anchor_id": anchor_id})
+    response = test_client.post(
+        "/api/v1/blockchain/verify",
+        json={"anchor_id": anchor_id},
+        headers=make_authenticated_headers(),
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -153,17 +185,27 @@ def test_verify_endpoint_detects_local_tamper(test_client, test_db) -> None:
     assert data["chain_failure"] is not None
 
 
-def test_verify_endpoint_missing_anchor_returns_404(test_client) -> None:
-    response = test_client.post("/api/v1/blockchain/verify", json={"anchor_id": 999999})
+def test_verify_endpoint_missing_anchor_returns_404(
+    test_client, make_authenticated_headers
+) -> None:
+    response = test_client.post(
+        "/api/v1/blockchain/verify",
+        json={"anchor_id": 999999},
+        headers=make_authenticated_headers(),
+    )
     assert response.status_code == 404
 
 
-def test_blockchain_response_never_includes_a_report_field(test_client, test_db) -> None:
+def test_blockchain_response_never_includes_a_report_field(
+    test_client, test_db, make_authenticated_headers
+) -> None:
     """Phase 18 boundary: no report-generation field leaks into the
     blockchain response shape."""
     case = _make_case(test_db)
     _record(test_db, case, ProcessingOperation.PARSING.value)
-    response = test_client.post(f"/api/v1/cases/{case.id}/blockchain/anchor", json={})
+    response = test_client.post(
+        f"/api/v1/cases/{case.id}/blockchain/anchor", json={}, headers=make_authenticated_headers()
+    )
     blob = str(response.json()).lower()
     for forbidden in ("report_path", "pdf", "forensic_report"):
         assert forbidden not in blob

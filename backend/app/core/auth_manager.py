@@ -98,6 +98,19 @@ class AuthManager:
         db.refresh(user)
         return user
 
+    @staticmethod
+    def list_users(db: Session) -> list[User]:
+        """List every user account, ordered by primary key.
+
+        Read-only; never exposes `password_hash` (callers project this
+        into a response schema that omits it). Phase 23 addition: the
+        custody-handoff recipient picker and the admin personnel view
+        both need to enumerate real accounts -- neither existed as an
+        HTTP-reachable capability before (`create_user` was manager-level
+        only; nothing listed existing users at all).
+        """
+        return db.query(User).order_by(User.id).all()
+
     # ---- Login / session issuance ----------------------------------------
 
     @staticmethod

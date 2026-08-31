@@ -87,8 +87,10 @@ class FindingsEngine:
             for key, value in (source_reference or {}).items():
                 new_items = value if isinstance(value, list) else [value]
                 existing_value = merged_reference.get(key)
-                combined = list(existing_value) if isinstance(existing_value, list) else (
-                    [existing_value] if existing_value is not None else []
+                combined = (
+                    list(existing_value)
+                    if isinstance(existing_value, list)
+                    else ([existing_value] if existing_value is not None else [])
                 )
                 for item in new_items:
                     if item not in combined:

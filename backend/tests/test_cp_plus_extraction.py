@@ -87,9 +87,7 @@ def test_extracts_keyframe_and_frame_records_in_order(tmp_path: Path):
 
     written = output.getvalue()
     # Keyframe record's 4 concatenated NALs, then the frame record's 1 NAL.
-    expected = (
-        _nal(32) + _nal(33) + _nal(34) + _nal(19, b"\xaa\xbb\xcc") + _nal(1, b"\x11\x22\x33")
-    )
+    expected = _nal(32) + _nal(33) + _nal(34) + _nal(19, b"\xaa\xbb\xcc") + _nal(1, b"\x11\x22\x33")
     assert written == expected
     assert result.bytes_written == len(expected)
 

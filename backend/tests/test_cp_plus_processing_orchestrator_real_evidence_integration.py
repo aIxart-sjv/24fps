@@ -32,7 +32,7 @@ from app.core.case_manager import CaseManager
 from app.core.evidence_manager import EvidenceManager
 from app.core.processing_orchestrator import ProcessingOrchestrator
 from app.core.processing_policy import ProcessingPolicy
-from app.models import Finding, FindingType, JobStatus, Notification
+from app.models import Device, Finding, FindingType, JobStatus, Notification
 from app.schemas.case import CaseCreateRequest
 from app.schemas.evidence import EvidenceCreateRequest
 from app.storage.db import Base
@@ -97,7 +97,7 @@ def test_automatic_processing_surfaces_the_known_anomaly_without_manual_inspecti
     shutil.copy2(source_path, copied_path)
 
     case = CaseManager.create_case(db, CaseCreateRequest(case_id="CASE-P22", name="Phase 22 IT"))
-    EvidenceManager.register_evidence(
+    evidence = EvidenceManager.register_evidence(
         db,
         case.id,
         EvidenceCreateRequest(
@@ -114,6 +114,17 @@ def test_automatic_processing_surfaces_the_known_anomaly_without_manual_inspecti
     summary = ProcessingOrchestrator.process_case(
         db, case.id, policy=ProcessingPolicy(run_ai=False), triggered_by=officer
     )
+
+    # ---- Phase 24 task scope, "Acquisition Metadata -- Fix Accuracy": for
+    # this real, known CP Plus recording, automatic processing must
+    # identify the real vendor with a documented basis (the confirmed
+    # CPV/ADIT-v1 structure) -- not the "vendor unknown, 60%" placeholder
+    # `app.detection.device_identifier`'s generic pass alone would leave.
+    device = db.query(Device).filter(Device.evidence_id == evidence.id).first()
+    assert device is not None
+    assert device.vendor == "CP Plus"
+    assert device.identification_method == "cp_plus_structure_signature"
+    assert device.confidence == 1.0
 
     # The orchestrator ran to a terminal state without crashing, and
     # honestly reports PARTIAL (not COMPLETED) because the recovery
@@ -137,7 +148,9 @@ def test_automatic_processing_surfaces_the_known_anomaly_without_manual_inspecti
     for finding in findings:
         lowered = finding.description.lower()
         for forbidden in ("tamper", "guilt", "deleted deliberately", "proves"):
-            assert forbidden not in lowered, f"finding {finding.id} overclaims: {finding.description!r}"
+            assert (
+                forbidden not in lowered
+            ), f"finding {finding.id} overclaims: {finding.description!r}"
 
     # ---- Single-camera evidence: correlation is explicitly not
     # applicable, never fabricated as a cross-camera result.
@@ -156,7 +169,9 @@ def test_automatic_processing_surfaces_the_known_anomaly_without_manual_inspecti
     )
 
     # ---- The officer was notified, pointing back to the authoritative finding.
-    notifications = db.query(Notification).filter(Notification.recipient_user_id == officer.id).all()
+    notifications = (
+        db.query(Notification).filter(Notification.recipient_user_id == officer.id).all()
+    )
     assert any(n.finding_id == anomaly.id for n in notifications)
 
     # ---- Source evidence is provably unmodified by the entire automatic

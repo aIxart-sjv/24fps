@@ -9,6 +9,19 @@ must never trust a caller-supplied arbitrary string... as proof of
 identity"). Business logic lives entirely in `app.core.custody_manager.
 CustodyManager`; routes only translate HTTP <-> manager calls and map
 `ValueError`/`PermissionError` to 400/403.
+
+Phase 25 adds case-level access on top: the `evidence_id`-keyed routes
+(`intake`, `initiate_handoff`, `history`, `current`) use
+`require_case_access_for_evidence` exactly like every other evidence-
+scoped route. The token-based routes (`inspect`/`accept`/`reject`) are
+different in kind -- `CustodyManager` itself already restricts them to
+"only the transfer's specific, pre-designated intended receiver" (a
+narrower, per-transfer authorization set by whoever initiated the handoff,
+who *did* need case access to do that), so these additionally verify case
+access on the resolved transfer's case before returning a response (never
+before the manager's own stronger receiver check, which is cheap and
+read-mostly to evaluate). `cancel_handoff` is restricted the same way, to
+only the user who initiated it.
 """
 
 from __future__ import annotations
@@ -16,10 +29,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_case_access_for_evidence
+from app.core.case_authorization_service import CaseAccessDeniedError, CaseAuthorizationService
 from app.core.custody_manager import CustodyManager
-from app.core.evidence_manager import EvidenceManager
-from app.models import CustodyTransfer, User
+from app.models import CustodyTransfer, Evidence, User
 from app.schemas.custody import (
     CustodyTransferResponse,
     HandoffTokenRequest,
@@ -54,12 +67,18 @@ def _transfer_response(transfer: CustodyTransfer) -> CustodyTransferResponse:
     )
 
 
-def _require_evidence(db: Session, evidence_id: int) -> None:
-    if EvidenceManager.get_evidence(db, evidence_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Evidence with id {evidence_id} not found",
-        )
+def _require_case_access_for_transfer(db: Session, user: User, transfer: CustodyTransfer) -> None:
+    """Post-hoc case-access check for the token-based routes -- see this
+    module's own docstring for why it runs after (never instead of)
+    `CustodyManager`'s own per-transfer receiver/initiator check."""
+    case_id = CaseAuthorizationService.resolve_case_id_for_evidence(db, transfer.evidence_id)
+    assert case_id is not None  # CustodyTransfer.evidence_id is a NOT NULL FK
+    try:
+        CaseAuthorizationService.require_case_access(db, user, case_id)
+    except CaseAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 def _require_user(db: Session, user_id: int) -> User:
@@ -81,9 +100,10 @@ def record_intake(
     payload: RecordIntakeRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> CustodyTransferResponse:
     """Record the initial physical custody intake of an evidence item."""
-    _require_evidence(db, evidence_id)
+    del evidence
     receiving_user = _require_user(db, payload.receiving_user_id)
     try:
         transfer = CustodyManager.record_initial_custody(
@@ -108,10 +128,11 @@ def initiate_handoff(
     payload: InitiateHandoffRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> InitiateHandoffResponse:
     """Initiate a new QR custody handoff. Only the evidence's current
     custodian (the authenticated caller) may successfully call this."""
-    _require_evidence(db, evidence_id)
+    del evidence
     receiving_user = _require_user(db, payload.receiving_user_id)
     try:
         issued = CustodyManager.initiate_handoff(
@@ -150,6 +171,7 @@ def inspect_pending_handoff(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _require_case_access_for_transfer(db, current_user, transfer)
     return _transfer_response(transfer)
 
 
@@ -169,6 +191,7 @@ def accept_handoff(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _require_case_access_for_transfer(db, current_user, transfer)
     return _transfer_response(transfer)
 
 
@@ -188,6 +211,7 @@ def reject_handoff(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _require_case_access_for_transfer(db, current_user, transfer)
     return _transfer_response(transfer)
 
 
@@ -215,9 +239,10 @@ def get_custody_history(
     evidence_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> list[CustodyTransferResponse]:
     """Read-only, chronological custody history for one evidence item."""
-    _require_evidence(db, evidence_id)
+    del evidence
     history = CustodyManager.get_custody_history(db, evidence_id)
     return [_transfer_response(t) for t in history]
 
@@ -229,10 +254,11 @@ def get_current_custodian(
     evidence_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    evidence: Evidence = Depends(require_case_access_for_evidence),
 ) -> CustodyTransferResponse | None:
     """The evidence item's current custodian, derived from custody
     history (the latest ACCEPTED transfer) -- never a cached field."""
-    _require_evidence(db, evidence_id)
+    del evidence
     latest = CustodyManager.get_current_custodian_transfer(db, evidence_id)
     if latest is None:
         return None

@@ -78,6 +78,7 @@ underlying result supports (see that module's own docstring).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -96,6 +97,11 @@ from app.core.processing_policy import ProcessingPolicy
 from app.core.provenance_manager import ProvenanceManager
 from app.core.recording_manager import RecordingManager
 from app.core.recovery_manager import RecoveryManager
+from app.core.resource_metrics import (
+    ResourceSnapshot,
+    capture_resource_snapshot,
+    diff_resource_snapshots,
+)
 from app.core.timeline_manager import TimelineManager
 from app.core.timestamp_manager import TimestampManager
 from app.core.validation_manager import ValidationManager
@@ -137,6 +143,7 @@ STAGE_TIMELINE = "timeline"
 STAGE_AI = "ai"
 STAGE_CORRELATION = "correlation"
 STAGE_VALIDATION = "validation"
+
 
 @dataclass
 class ProcessingRunSummary:
@@ -792,7 +799,11 @@ class ProcessingOrchestrator:
         new_findings: list[Finding],
     ) -> str:
         job = ProcessingOrchestrator._start_stage(
-            db, root, STAGE_TIMESTAMP_NORMALIZATION, evidence.id, recording_ids=[r.id for r in recordings]
+            db,
+            root,
+            STAGE_TIMESTAMP_NORMALIZATION,
+            evidence.id,
+            recording_ids=[r.id for r in recordings],
         )
         if not policy.run_timestamp_normalization:
             return ProcessingOrchestrator._finish_stage(
@@ -873,8 +884,18 @@ class ProcessingOrchestrator:
         new_findings: list[Finding],
         run_warnings: list[str],
     ) -> str:
+        input_size, input_size_unit = ProcessingOrchestrator._ai_input_size(
+            db, extracted_recording_ids
+        )
         job = ProcessingOrchestrator._start_stage(
-            db, root, STAGE_AI, evidence.id, recording_ids=extracted_recording_ids
+            db,
+            root,
+            STAGE_AI,
+            evidence.id,
+            recording_ids=extracted_recording_ids,
+            input_type="derived_media_artifact",
+            input_size=input_size,
+            input_size_unit=input_size_unit,
         )
         if not extracted_recording_ids:
             return ProcessingOrchestrator._finish_stage(
@@ -894,7 +915,9 @@ class ProcessingOrchestrator:
             analysis_types=list(policy.ai_analysis_types),
         )
         if ai_job.status == JobStatus.FAILED.value:
-            run_warnings.append(f"AI analysis unavailable for evidence {evidence.evidence_id!r}: {ai_job.error}")
+            run_warnings.append(
+                f"AI analysis unavailable for evidence {evidence.evidence_id!r}: {ai_job.error}"
+            )
             finding, is_new = FindingsEngine.upsert_finding(
                 db,
                 case_id=evidence.case_id,
@@ -961,7 +984,18 @@ class ProcessingOrchestrator:
         new_findings: list[Finding],
         run_warnings: list[str],
     ) -> str:
-        job = ProcessingOrchestrator._start_stage(db, root, STAGE_CORRELATION, evidence_id=None)
+        timeline_event_count = (
+            db.query(TimelineEvent).filter(TimelineEvent.case_id == case_id).count()
+        )
+        job = ProcessingOrchestrator._start_stage(
+            db,
+            root,
+            STAGE_CORRELATION,
+            evidence_id=None,
+            input_type="timeline_events",
+            input_size=timeline_event_count,
+            input_size_unit="events",
+        )
         if not policy.run_correlation:
             return ProcessingOrchestrator._finish_stage(
                 db,
@@ -1030,7 +1064,16 @@ class ProcessingOrchestrator:
         new_findings: list[Finding],
         run_warnings: list[str],
     ) -> str:
-        job = ProcessingOrchestrator._start_stage(db, root, STAGE_VALIDATION, evidence_id=None)
+        ground_truth_count = db.query(GroundTruth).filter(GroundTruth.case_id == case_id).count()
+        job = ProcessingOrchestrator._start_stage(
+            db,
+            root,
+            STAGE_VALIDATION,
+            evidence_id=None,
+            input_type="ground_truth_rows",
+            input_size=ground_truth_count,
+            input_size_unit="rows",
+        )
         if not policy.run_validation:
             return ProcessingOrchestrator._finish_stage(
                 db,
@@ -1163,7 +1206,24 @@ class ProcessingOrchestrator:
         evidence_id: int | None,
         *,
         recording_ids: list[int] | None = None,
+        input_type: str | None = None,
+        input_size: int | None = None,
+        input_size_unit: str | None = None,
     ) -> Job:
+        """Create and start one dependency-tracked stage job, stamping a
+        real, measured resource-usage start snapshot (task: "Processing
+        Performance ... from REAL runtime data").
+
+        When `input_type`/`input_size` are not supplied by the caller (the
+        common case: every per-evidence stage in this pipeline ultimately
+        reads the same evidence source file -- `RecordingManager`'s own
+        module docstring: it "opens/closes EvidenceStorageReaders", never
+        a separately-sized derived input), this falls back to the real,
+        on-disk size of `Evidence.source_path`. Callers whose real input is
+        something else (the AI stage's derived artifact, the
+        correlation/validation stages' case-level row counts) pass the
+        real value explicitly instead.
+        """
         job = JobManager.create_job(
             db,
             case_id=root.case_id,
@@ -1172,6 +1232,29 @@ class ProcessingOrchestrator:
             recording_ids=recording_ids,
         )
         job.parent_job_id = root.id
+
+        resolved_input_type = input_type
+        resolved_input_size = input_size
+        resolved_input_size_unit = input_size_unit
+        if resolved_input_type is None and evidence_id is not None:
+            evidence = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+            if evidence is not None and evidence.source_path:
+                resolved_input_type = "evidence_source_file"
+                try:
+                    resolved_input_size = os.path.getsize(evidence.source_path)
+                    resolved_input_size_unit = "bytes"
+                except OSError:
+                    resolved_input_size = None
+                    resolved_input_size_unit = None
+
+        job.resource_metrics = json.dumps(
+            {
+                "start": capture_resource_snapshot().as_dict(),
+                "input_type": resolved_input_type,
+                "input_size": resolved_input_size,
+                "input_size_unit": resolved_input_size_unit,
+            }
+        )
         db.add(job)
         db.commit()
         db.refresh(job)
@@ -1190,8 +1273,24 @@ class ProcessingOrchestrator:
         warnings: list[str] | None = None,
         error: str | None = None,
     ) -> str:
+        end_snapshot = capture_resource_snapshot()
+        resource_metrics: dict[str, object] | None = None
+        stored = json.loads(job.resource_metrics) if job.resource_metrics else None
+        if stored is not None and "start" in stored:
+            start_snapshot = ResourceSnapshot.from_dict(stored["start"])
+            resource_metrics = diff_resource_snapshots(start_snapshot, end_snapshot)
+            resource_metrics["input_type"] = stored.get("input_type")
+            resource_metrics["input_size"] = stored.get("input_size")
+            resource_metrics["input_size_unit"] = stored.get("input_size_unit")
+
         job = JobManager.finish_job(
-            db, job, status=status, results_count=results_count, warnings=warnings, error=error
+            db,
+            job,
+            status=status,
+            results_count=results_count,
+            warnings=warnings,
+            error=error,
+            resource_metrics=resource_metrics,
         )
         ProvenanceManager.record_event(
             db,
@@ -1208,6 +1307,24 @@ class ProcessingOrchestrator:
             error=error,
         )
         return status.value
+
+    @staticmethod
+    def _ai_input_size(db: Session, recording_ids: list[int]) -> tuple[int | None, str | None]:
+        """Real, on-disk total size of the derived media artifact(s) the
+        AI stage will actually decode -- the same resolution
+        `AIManager._resolve_source_artifact` itself uses (never a
+        separately-guessed input), summed across every recording in this
+        stage. `None` when no recording resolves to an on-disk artifact."""
+        total_bytes = 0
+        found_any = False
+        for recording in db.query(Recording).filter(Recording.id.in_(recording_ids)).all():
+            artifact = AIManager._resolve_source_artifact(db, recording)  # noqa: SLF001
+            if artifact is not None and artifact.size_bytes is not None:
+                total_bytes += artifact.size_bytes
+                found_any = True
+        if not found_any:
+            return None, None
+        return total_bytes, "bytes"
 
     @staticmethod
     def _recording_metadata_value(db: Session, recording_id: int, key: str) -> str | None:

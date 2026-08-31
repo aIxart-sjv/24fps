@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.case_manager import CaseManager
+from app.api.deps import require_case_access, require_case_access_for_report
 from app.core.report_manager import ReportManager
-from app.models import Report
+from app.models import Case, Report
 from app.schemas.report import ReportCreateRequest, ReportResponse
 from app.storage.db import get_db
 
@@ -46,13 +46,13 @@ def _report_response(report: Report) -> ReportResponse:
 
 @router.post("/cases/{case_id}/reports", response_model=list[ReportResponse])
 def create_reports(
-    case_id: int, body: ReportCreateRequest, db: Session = Depends(get_db)
+    case_id: int,
+    body: ReportCreateRequest,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
 ) -> list[ReportResponse]:
     """Generate standardized report(s) for a case (JSON and PDF by default)."""
-    if CaseManager.get_case(db, case_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found"
-        )
+    del case
     formats = tuple(body.formats) if body.formats is not None else None
     try:
         reports = ReportManager.generate_report(
@@ -63,31 +63,39 @@ def create_reports(
     return [_report_response(r) for r in reports]
 
 
+@router.get("/cases/{case_id}/reports", response_model=list[ReportResponse])
+def list_case_reports(
+    case_id: int,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access),
+) -> list[ReportResponse]:
+    """List every report ever generated for a case, oldest first.
+
+    Phase 23 gap assessment: `ReportManager.list_reports` existed with no
+    HTTP route -- a report tab could create a report and read one by ID,
+    but never discover previously generated ones for a case (task Phase
+    23 scope, "Reporting": "Support: report creation, report status,
+    report details" -- listing prior reports is implied and was missing).
+    """
+    del case
+    return [_report_response(r) for r in ReportManager.list_reports(db, case_id)]
+
+
 @router.get("/reports/{report_id}", response_model=ReportResponse)
-def get_report(report_id: int, db: Session = Depends(get_db)) -> ReportResponse:
+def get_report(report: Report = Depends(require_case_access_for_report)) -> ReportResponse:
     """Retrieve one report's metadata."""
-    report = ReportManager.get_report(db, report_id)
-    if report is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Report with id {report_id} not found"
-        )
     return _report_response(report)
 
 
 @router.get("/reports/{report_id}/download")
-def download_report(report_id: int, db: Session = Depends(get_db)) -> Response:
+def download_report(report: Report = Depends(require_case_access_for_report)) -> Response:
     """Download one report's file content."""
-    report = ReportManager.get_report(db, report_id)
-    if report is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Report with id {report_id} not found"
-        )
     try:
         content = ReportManager.read_report_content(report)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"report {report_id}'s file is missing on disk",
+            detail=f"report {report.id}'s file is missing on disk",
         ) from exc
     media_type = _MEDIA_TYPES.get(report.report_type, "application/octet-stream")
     filename = f"report_{report.case_id}_{report.id}.{report.report_type}"

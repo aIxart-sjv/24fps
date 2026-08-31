@@ -79,3 +79,25 @@ class DeviceIdentificationResult(BaseModel):
     warnings: list[str] = []
     supporting_evidence: list[str] = []
     parser_selection_hints: list[str] = []
+
+
+class VendorSupportSummaryResponse(BaseModel):
+    """One registered vendor adapter's declared support, exactly as that
+    adapter reports it (`app.adapters.registry.AdapterSupportSummary`,
+    Phase 19). Never computed or inferred here -- this is a direct,
+    honest read of `AdapterRegistry.support_matrix()` so the frontend
+    never has to (and never should) hardcode "supported"/"unsupported"
+    per vendor (task Phase 23 scope, "Devices / OEM Support": "Do not
+    display 'Supported' for every vendor merely because it exists in the
+    registry.")."""
+
+    vendor: str
+    model_pattern: str
+    firmware_pattern: str | None
+    model_scope: str
+    support_level: int
+    support_level_label: str
+    evidence_basis: list[str]
+    capabilities: list[str]
+    limitations: list[str]
+    adapter_version: str

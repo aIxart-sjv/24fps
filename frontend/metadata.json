@@ -1,0 +1,7 @@
+{
+  "name": "24FPS - Digital Forensics Platform",
+  "description": "Unified digital forensics platform for CCTV evidence acquisition, recovery, AI analysis, integrity verification, and reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

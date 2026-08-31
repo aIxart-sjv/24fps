@@ -32,6 +32,24 @@ class TimelineEventResponse(BaseModel):
     recovery_status: str | None
     correlation_id: int | None
     created_at: datetime
+    #: `app.timeline.NormalizationStatus` value (`"verified"`/
+    #: `"unverified"`/`"partial"`/`"unknown"`) from the linked recording's
+    #: own `TimestampManager.normalize_recording` run -- `"unknown"` when
+    #: this event has no linked recording (e.g. an examiner marker) or
+    #: normalization has not run yet, never a stronger claim than that
+    #: (Phase 24 task scope, "Timeline -- Fix Current Presentation").
+    timestamp_status: str
+    #: `app.timeline.TimestampSource` value (e.g. `"filename_derived"`),
+    #: or `None` when not applicable/not yet computed.
+    timestamp_source: str | None
+    #: Whether an examiner-supplied source timezone was ever recorded for
+    #: the linked recording -- `"known"` or `"unknown"`, never fabricated
+    #: as resolved when no timezone was actually supplied.
+    timezone_status: str
+    #: Free-text provenance for the timezone (e.g. "case device fact
+    #: sheet: NVR configured for IST"), or `None` when `timezone_status`
+    #: is `"unknown"`.
+    timezone_basis: str | None
 
 
 class ExaminerMarkerCreateRequest(BaseModel):

@@ -151,10 +151,23 @@ class Job(Base):
     output_artifacts: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: JSON-encoded, real, measured resource usage for this job (Phase
+    #: 24-2, "Processing Performance ... from REAL runtime data"):
+    #: `app.core.resource_metrics.ResourceSnapshot.as_dict()` under
+    #: `"start"`/`"end"`, plus computed `runtime_seconds` (high-resolution
+    #: `time.perf_counter()` delta, not a wall-clock subtraction),
+    #: `cpu_user_seconds`/`cpu_system_seconds` deltas, `peak_rss_kb`,
+    #: `rss_delta_kb`, and `input_type`/`input_size`/`input_size_unit`.
+    #: `NULL` for every job type/row that predates this column, or that
+    #: no caller has opted into populating -- never backfilled with a
+    #: guessed value.
+    resource_metrics: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     case: Mapped[Case] = relationship("Case", back_populates="jobs")
     evidence: Mapped[Evidence | None] = relationship("Evidence")
-    parent_job: Mapped[Job | None] = relationship("Job", remote_side=[id], back_populates="child_jobs")
+    parent_job: Mapped[Job | None] = relationship(
+        "Job", remote_side=[id], back_populates="child_jobs"
+    )
     child_jobs: Mapped[list[Job]] = relationship("Job", back_populates="parent_job")
 
     def __repr__(self) -> str:

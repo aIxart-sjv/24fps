@@ -163,7 +163,14 @@ def test_process_case_clean_cp_plus_evidence_completes(db_session_and_engine) ->
     assert case.status == CaseStatus.REVIEW
 
     stages_by_type = {child.job_type: child.status for child in summary.root_job.child_jobs}
-    for stage in ("integrity", "identification", "enumeration", "recovery", "timestamp_normalization", "timeline"):
+    for stage in (
+        "integrity",
+        "identification",
+        "enumeration",
+        "recovery",
+        "timestamp_normalization",
+        "timeline",
+    ):
         assert stages_by_type[stage] == JobStatus.COMPLETED.value, stage
     # `extraction` may itself be PARTIAL here: this fixture's fake NAL
     # payloads are not real decodable video, so ffmpeg's mux-to-MP4 step
@@ -216,6 +223,42 @@ def test_process_case_truncated_segment_produces_recovery_and_corruption_finding
         assert "guilt" not in lowered
 
 
+def test_partial_recovery_finding_resolves_to_its_recording_and_timestamp(
+    db_session_and_engine,
+) -> None:
+    """Phase 24 task scope, "Officer Notification Flow": a finding tied to
+    a specific recording must resolve a real recording/timestamp so a
+    notification can jump straight to the relevant video -- imported
+    directly from the API layer that both `GET /findings` and
+    `GET /notifications` share."""
+    from app.api.routes.findings import _resolve_finding_location
+
+    db, evidence_root = db_session_and_engine
+    case = _make_case(db)
+    _register_evidence(
+        db,
+        case,
+        evidence_root,
+        "NVR_ch1_main_20260101120000_20260101120010.cpv",
+        _truncated_segment_bytes(),
+    )
+
+    ProcessingOrchestrator.process_case(db, case.id, policy=_NO_AI_POLICY)
+
+    finding = (
+        db.query(Finding)
+        .filter(
+            Finding.case_id == case.id, Finding.finding_type == FindingType.PARTIAL_RECOVERY.value
+        )
+        .one()
+    )
+    assert finding.recording_id is not None
+
+    recording_id, timestamp = _resolve_finding_location(db, finding)
+    assert recording_id == finding.recording_id
+    assert timestamp is not None
+
+
 def test_process_case_is_idempotent_on_rerun(db_session_and_engine) -> None:
     db, evidence_root = db_session_and_engine
     case = _make_case(db)
@@ -242,7 +285,9 @@ def test_process_case_is_idempotent_on_rerun(db_session_and_engine) -> None:
 
     merged = (
         db.query(Finding)
-        .filter(Finding.case_id == case.id, Finding.finding_type == FindingType.PARTIAL_RECOVERY.value)
+        .filter(
+            Finding.case_id == case.id, Finding.finding_type == FindingType.PARTIAL_RECOVERY.value
+        )
         .one()
     )
     assert merged.occurrence_count >= 1
@@ -325,10 +370,14 @@ def test_process_case_notifies_triggering_officer(db_session_and_engine) -> None
         db, username="officer1", display_name="Officer One", password="password123"
     )
 
-    summary = ProcessingOrchestrator.process_case(db, case.id, policy=_NO_AI_POLICY, triggered_by=officer)
+    summary = ProcessingOrchestrator.process_case(
+        db, case.id, policy=_NO_AI_POLICY, triggered_by=officer
+    )
 
     assert summary.notification_ids
-    notifications = db.query(Notification).filter(Notification.recipient_user_id == officer.id).all()
+    notifications = (
+        db.query(Notification).filter(Notification.recipient_user_id == officer.id).all()
+    )
     assert len(notifications) == len(summary.new_finding_ids)
     assert {n.finding_id for n in notifications} == set(summary.new_finding_ids)
 
