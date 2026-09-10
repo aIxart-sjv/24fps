@@ -420,6 +420,43 @@ class EvidenceManager:
         return device
 
     @staticmethod
+    def confirm_device_serial(db: Session, evidence_id: int, serial_number: str) -> Device:
+        """Upsert `Device.serial_number` from a vendor-specific parser's own
+        positive identification (Phase 26).
+
+        Mirrors `confirm_vendor`'s established pattern (called once a
+        vendor-specific parser -- currently `RecordingManager`, for
+        Hikvision's export-log-sidecar-confirmed clips -- has positively
+        read a device serial number from real evidence, stronger than
+        `identify_device`'s generic container/filesystem tiers can ever
+        produce), but touches only `serial_number`, never `vendor`/
+        `identification_method`/`confidence` (those remain
+        `confirm_vendor`'s own responsibility, called separately).
+
+        Idempotent, matching `identify_device`/`confirm_vendor`: safe to
+        call more than once against the same evidence.
+
+        Args:
+            db: Database session.
+            evidence_id: Primary key of the evidence this serial number was
+                read from.
+            serial_number: The device serial number, read verbatim from
+                real evidence (e.g. a device export-log sidecar) -- never
+                guessed.
+
+        Returns:
+            The persisted `Device` row.
+        """
+        device = db.query(Device).filter(Device.evidence_id == evidence_id).first()
+        if device is None:
+            device = Device(evidence_id=evidence_id)
+            db.add(device)
+        device.serial_number = serial_number
+        db.commit()
+        db.refresh(device)
+        return device
+
+    @staticmethod
     def detect_format(db: Session, evidence_id: int) -> tuple[Storage, DeviceIdentificationResult]:
         """Run Phase 6 storage/format identification and persist onto `Storage`.
 

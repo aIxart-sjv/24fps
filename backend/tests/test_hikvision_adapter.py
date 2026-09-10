@@ -1,9 +1,11 @@
-"""Tests for the Hikvision adapter (Phase 19): bounded-search detection,
-capability reporting, support-level honesty. All fixtures are explicitly
-synthetic, built from the *documented* "HIKVISION@HANGZHOU" signature
-(peer-reviewed 2015 paper + independent MIT-licensed corroboration --
-see app.adapters.hikvision's module docstring), never presented as real
-Hikvision evidence.
+"""Tests for the Hikvision adapter: Track A (Phase 19) bounded-search raw-
+filesystem detection, and Track B (Phase 26) capability/identity honesty
+using synthetic-only fixtures. Track A fixtures are explicitly synthetic,
+built from the *documented* "HIKVISION@HANGZHOU" signature (peer-reviewed
+2015 paper + independent MIT-licensed corroboration -- see
+app.adapters.hikvision's module docstring), never presented as real
+Hikvision evidence. Track B behavior against REAL evidence is covered
+separately in test_hikvision_real_evidence_integration.py.
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ import pytest
 from app.acquisition.storage_reader import FileBackedReader
 from app.adapters.base import (
     AdapterCapability,
-    AdapterCapabilityNotImplementedError,
     EvidenceBasis,
     SupportLevel,
 )
@@ -113,25 +114,40 @@ def test_detection_read_is_bounded(tmp_path: Path) -> None:
 # ---- Adapter identity / honesty ----------------------------------------
 
 
-def test_adapter_declares_detection_only_capability() -> None:
+def test_adapter_declares_track_a_and_track_b_capabilities() -> None:
+    """Phase 26: Track A (raw filesystem, unchanged) is still declared
+    alongside Track B's real, exported-clip capabilities -- but RECOVERY
+    is deliberately never declared for either track (see
+    app.adapters.hikvision.recovery's module docstring)."""
     adapter = HikvisionAdapter()
-    assert adapter.capabilities == frozenset({AdapterCapability.FILESYSTEM_DETECTION})
-    assert AdapterCapability.RECORDING_EXTRACTION not in adapter.capabilities
+    assert AdapterCapability.FILESYSTEM_DETECTION in adapter.capabilities
+    assert AdapterCapability.RECORDING_ENUMERATION in adapter.capabilities
+    assert AdapterCapability.METADATA_EXTRACTION in adapter.capabilities
+    assert AdapterCapability.RECORDING_EXTRACTION in adapter.capabilities
     assert AdapterCapability.RECOVERY not in adapter.capabilities
-    assert AdapterCapability.RECORDING_ENUMERATION not in adapter.capabilities
-    assert AdapterCapability.METADATA_EXTRACTION not in adapter.capabilities
 
 
-def test_adapter_support_level_is_detection_not_validated() -> None:
+def test_adapter_support_level_reflects_track_b_validation() -> None:
+    """Phase 26: the adapter's own `support_level` reports Track B's real,
+    validated status -- Track A's own still-unvalidated status is spelled
+    out honestly in `model_scope`/`limitations` instead of dragging the
+    whole adapter down to Track A's level (see HikvisionAdapter.
+    support_level's own docstring)."""
     adapter = HikvisionAdapter()
-    assert adapter.support_level == SupportLevel.LEVEL_1_DETECTION
-    assert adapter.support_level < SupportLevel.LEVEL_4_VALIDATED
+    assert adapter.support_level == SupportLevel.LEVEL_4_VALIDATED
+    assert "TRACK A" in adapter.model_scope
+    assert "TRACK B" in adapter.model_scope
+    assert any("TRACK A" in limitation for limitation in adapter.limitations)
 
 
-def test_adapter_evidence_basis_is_never_real_project_evidence() -> None:
+def test_adapter_evidence_basis_includes_real_project_evidence() -> None:
+    """Phase 26: Track B is validated against real, controlled evidence --
+    this is the first time this adapter can honestly cite
+    `REAL_PROJECT_EVIDENCE` (Track A remains public-research-only, see
+    `model_scope`)."""
     adapter = HikvisionAdapter()
-    assert EvidenceBasis.REAL_PROJECT_EVIDENCE not in adapter.evidence_basis
-    assert len(adapter.evidence_basis) > 0
+    assert EvidenceBasis.REAL_PROJECT_EVIDENCE in adapter.evidence_basis
+    assert EvidenceBasis.PUBLIC_FORMAT_DOCUMENTATION in adapter.evidence_basis
 
 
 def test_adapter_limitations_document_firmware_variance() -> None:
@@ -164,23 +180,44 @@ def test_inspect_storage_with_reader_returns_structured_result(tmp_path: Path) -
     assert result.metadata["matched_offset"] == "512"
 
 
-def test_enumerate_recordings_is_not_implemented() -> None:
+def test_enumerate_recordings_without_reader_raises_value_error() -> None:
     adapter = HikvisionAdapter()
-    with pytest.raises(AdapterCapabilityNotImplementedError):
+    with pytest.raises(ValueError, match="no bound evidence reader"):
         adapter.enumerate_recordings()
 
 
-def test_extract_recording_is_not_implemented() -> None:
-    adapter = HikvisionAdapter()
-    with pytest.raises(AdapterCapabilityNotImplementedError):
-        adapter.extract_recording("anything")
+def test_enumerate_recordings_on_non_hikvision_evidence_reports_unsupported(
+    tmp_path: Path,
+) -> None:
+    """Phase 26: a file that is neither Hikvision-named nor Hikvision-
+    sidecar-confirmed is honestly UNSUPPORTED, never guessed."""
+    path = _write(tmp_path, "some_random_video.mp4", b"\x00" * 1024)
+    reader = FileBackedReader(path)
+    adapter = HikvisionAdapter(reader)
+    result = adapter.enumerate_recordings()
+    assert result.confidence == 0.0
+    assert result.recordings == []
 
 
-def test_find_deleted_recordings_is_not_implemented() -> None:
-    """No deleted-record recovery capability was claimed for Hikvision."""
+def test_extract_recording_on_non_hikvision_evidence_reports_zero_confidence(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path, "some_random_video.mp4", b"\x00" * 1024)
+    reader = FileBackedReader(path)
+    adapter = HikvisionAdapter(reader)
+    result = adapter.extract_recording("does-not-exist")
+    assert result.confidence == 0.0
+
+
+def test_find_deleted_recordings_reports_unsupported_for_exported_media() -> None:
+    """No deleted-record recovery capability is claimed for Hikvision
+    exported media -- see app.adapters.hikvision.recovery's module
+    docstring for why this genuinely differs from a bare "not
+    implemented"."""
     adapter = HikvisionAdapter()
-    with pytest.raises(AdapterCapabilityNotImplementedError):
-        adapter.find_deleted_recordings()
+    result = adapter.find_deleted_recordings()
+    assert result.confidence == 0.0
+    assert "not_supported_for_exported_media" in result.warnings[0]
 
 
 def test_minimum_inspectable_size_is_documented() -> None:

@@ -104,22 +104,27 @@ def test_support_matrix_lists_every_registered_adapter() -> None:
     }
 
 
-def test_support_matrix_only_cp_plus_reaches_level_4() -> None:
+def test_support_matrix_cp_plus_and_hikvision_reach_level_4() -> None:
+    """Phase 26: Hikvision's own `support_level` now reports its Track B
+    (exported-clip) validated status, joining CP Plus -- see
+    `HikvisionAdapter.support_level`'s own docstring for why Track A's
+    still-unvalidated raw-filesystem detection does not drag this down,
+    and `model_scope`/`limitations` for the honest per-track breakdown."""
     registry = build_default_registry()
     matrix = registry.support_matrix()
-    level_4_vendors = [
+    level_4_vendors = {
         e.vendor for e in matrix if e.support_level == SupportLevel.LEVEL_4_VALIDATED
-    ]
-    assert level_4_vendors == ["CP Plus"]
+    }
+    assert level_4_vendors == {"CP Plus", "Hikvision"}
 
 
-def test_support_matrix_only_dahua_and_hikvision_reach_level_1() -> None:
+def test_support_matrix_only_dahua_reaches_level_1() -> None:
     registry = build_default_registry()
     matrix = registry.support_matrix()
     level_1_vendors = {
         e.vendor for e in matrix if e.support_level == SupportLevel.LEVEL_1_DETECTION
     }
-    assert level_1_vendors == {"Dahua Technology", "Hikvision"}
+    assert level_1_vendors == {"Dahua Technology"}
 
 
 def test_support_matrix_five_vendors_are_research_only() -> None:
@@ -137,14 +142,16 @@ def test_support_matrix_five_vendors_are_research_only() -> None:
     }
 
 
-def test_support_matrix_never_claims_recording_extraction_except_cp_plus() -> None:
+def test_support_matrix_never_claims_recording_extraction_without_validation() -> None:
     """Task Phase 19 scope: "Do not claim MEDIA_EXTRACTION if no
     validated extraction path exists." Verified across the whole
-    registry, not just per-adapter."""
+    registry, not just per-adapter. Phase 26: Hikvision now legitimately
+    joins CP Plus here -- its Track B (exported-clip) extraction is real,
+    ffprobe/FFmpeg-validated against real evidence, not a research claim."""
     registry = build_default_registry()
     for entry in registry.support_matrix():
         if AdapterCapability.RECORDING_EXTRACTION in entry.capabilities:
-            assert entry.vendor == "CP Plus"
+            assert entry.vendor in {"CP Plus", "Hikvision"}
 
 
 def test_support_matrix_never_claims_recovery_except_cp_plus() -> None:

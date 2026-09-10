@@ -6,22 +6,29 @@ This is the orchestration layer Master Specification Section 16 assigns to
 "the common engine" (evidence objects, provenance) rather than to a vendor
 adapter: it opens/closes `EvidenceStorageReader`s one at a time (never more
 than one at once, matching `app.adapters.cp_plus.session`'s own documented
-contract), calls into the CP Plus adapter/parser for vendor-specific
-structure understanding, calls into `app.media` for FFmpeg, and persists
-the result as `Recording`/`RecordingMetadata`/`Artifact` rows.
+contract), calls into the vendor-specific adapter/parser for
+vendor-specific structure understanding, calls into `app.media` for
+FFmpeg, and persists the result as `Recording`/`RecordingMetadata`/
+`Artifact` rows.
 
-Vendor dispatch is currently CP Plus-only and explicit (this evidence
-either matches the validated "ADIT-v1" structure or it does not) rather
-than routed through `app.adapters.registry.AdapterRegistry`: nothing in
+Vendor dispatch is explicit and try-in-order (`_ensure_segment_recording`
+tries CP Plus's binary "ADIT-v1" structure match first, then Hikvision's
+export-filename+sidecar-log identification, Phase 26) rather than routed
+through `app.adapters.registry.AdapterRegistry`: nothing in
 `app.detection` can determine vendor from generic container inspection
-alone, so registry-based dispatch cannot yet select this adapter *before*
-this module has already tried it. Once this module confirms a match,
-though, it does write that confirmation back onto `Device` (via
-`EvidenceManager.confirm_vendor`, Phase 24) so downstream consumers
-(acquisition/identification API responses) see the real vendor rather
-than `app.detection.device_identifier`'s generic, deliberately
-vendor-blind result. A second real vendor adapter should prompt
-revisiting the dispatch side of this gap.
+alone, so registry-based dispatch cannot yet select the right adapter
+*before* this module has already tried each one. Once this module
+confirms a match, though, it does write that confirmation back onto
+`Device` (via `EvidenceManager.confirm_vendor`, Phase 24) so downstream
+consumers (acquisition/identification API responses) see the real vendor
+rather than `app.detection.device_identifier`'s generic, deliberately
+vendor-blind result. Extraction (`extract_recording`) branches on the
+persisted `vendor` `RecordingMetadata` entry: CP Plus's own proprietary-
+container reconstruction pipeline is unchanged; Hikvision's exported clip
+already being a standard container, its own `_extract_hikvision_recording`
+skips reconstruction entirely and remuxes/transcodes directly from the
+preserved source evidence file. A third real vendor adapter should prompt
+revisiting the dispatch side of this gap into something more structured.
 """
 
 from __future__ import annotations
@@ -44,10 +51,18 @@ from app.adapters.cp_plus.session import (
     link_cpv_session,
     segment_descriptor_from_header,
 )
+from app.adapters.hikvision.models import HikvisionClipIdentificationStatus
+from app.adapters.hikvision.models import to_recording_fields as hikvision_to_recording_fields
+from app.adapters.hikvision.parser import HikvisionParser
 from app.core.evidence_manager import EvidenceManager
 from app.hashing.md5 import md5_file
 from app.hashing.sha256 import sha256_file
-from app.media.decoder import mux_hevc_annexb_to_mp4, transcode_to_h264_mp4
+from app.media.decoder import (
+    mux_hevc_annexb_to_mp4,
+    remux_container_to_mp4,
+    transcode_container_to_h264_aac_mp4,
+    transcode_to_h264_mp4,
+)
 from app.media.ffmpeg import get_ffmpeg_version
 from app.media.media_probe import probe_media
 from app.models import Artifact, Case, Evidence, Recording, RecordingMetadata
@@ -67,6 +82,14 @@ _UNSUPPORTED_STATUSES = frozenset({CPPlusParseStatus.UNKNOWN, CPPlusParseStatus.
 #: `SUPPORTED_PARTIAL` status still definitively identifies the vendor).
 _CP_PLUS_VENDOR_CONFIDENCE = 1.0
 _CP_PLUS_IDENTIFICATION_METHOD = "cp_plus_structure_signature"
+
+#: Phase 26: identification method recorded on `Device.identification_method`
+#: once a Hikvision export filename + same-stem export-log sidecar have
+#: been positively cross-checked (`HikvisionClipIdentificationStatus.
+#: CONFIRMED_BY_EXPORT_LOG`) -- see `app.adapters.hikvision.parser`'s
+#: module docstring for why this, not an in-container signature, is this
+#: vendor's own strongest available identification evidence.
+_HIKVISION_IDENTIFICATION_METHOD = "hikvision_export_log_sidecar"
 
 #: `RecordingMetadata.key` for the ordered, JSON-encoded list of
 #: `{"evidence_pk", "evidence_business_id", "segment_recording_id",
@@ -88,7 +111,8 @@ _MEDIA_PROBE_OWNED_FIELDS = frozenset(
 
 
 class RecordingManager:
-    """Service layer for CP Plus recording discovery, linking, and extraction."""
+    """Service layer for recording discovery, linking, and extraction
+    (CP Plus and, since Phase 26, Hikvision)."""
 
     # --- enumeration -----------------------------------------------------
 
@@ -106,7 +130,9 @@ class RecordingManager:
 
         Returns:
             The `Recording` rows discovered — empty (not an error) when
-            this evidence does not match a supported CP Plus structure.
+            this evidence does not match any supported vendor structure
+            (CP Plus's binary "ADIT-v1" signature, or Hikvision's export
+            filename + sidecar-log identification).
 
         Raises:
             ValueError: If evidence is not found or has no `source_path`.
@@ -124,83 +150,206 @@ class RecordingManager:
     def _ensure_segment_recording(
         db: Session, evidence: Evidence
     ) -> tuple[Recording | None, CPVSegmentDescriptor | None]:
-        """Open `evidence`'s reader once and both enumerate and header-parse it.
+        """Open `evidence`'s reader once and try each supported vendor in turn.
 
         Internal helper shared by `enumerate_recordings` (which only needs
         the `Recording`) and `link_session` (which also needs a
-        `CPVSegmentDescriptor` for counter-based linking) so a segment's
-        reader is only ever opened once per call, never twice.
+        `CPVSegmentDescriptor` for counter-based linking, a CP Plus-only
+        concept -- `None` for every other vendor) so a segment's reader is
+        only ever opened once per call, never twice.
+
+        Tries CP Plus's binary structure match first (unchanged from
+        Phase 9), then Hikvision's sidecar-log-based exported-clip
+        identification (Phase 26) -- CP Plus's own detector safely reports
+        `UNSUPPORTED`/`UNKNOWN` for non-matching bytes (never raises), so
+        trying it against Hikvision evidence first costs nothing and keeps
+        CP Plus's own dispatch precedence exactly as documented in this
+        module's own docstring.
+
+        Returns:
+            `(recording, descriptor)`. `descriptor` is `None` for every
+            vendor except CP Plus (session linking is a CP Plus-only
+            concept -- see `link_session`). Both are `None` when this
+            evidence matches no supported vendor structure.
+        """
+        assert evidence.source_path is not None  # enforced by callers
+        reader = open_reader(evidence.source_type, Path(evidence.source_path))
+        try:
+            recording, descriptor = RecordingManager._try_cp_plus_segment(db, evidence, reader)
+            if recording is not None:
+                return recording, descriptor
+
+            recording = RecordingManager._try_hikvision_recording(db, evidence, reader)
+            return recording, None
+        finally:
+            reader.close()
+
+    @staticmethod
+    def _try_cp_plus_segment(
+        db: Session, evidence: Evidence, reader: Any
+    ) -> tuple[Recording | None, CPVSegmentDescriptor | None]:
+        """Try CP Plus's binary "ADIT-v1" structure match against `reader`.
 
         Returns:
             `(recording, descriptor)`, both `None` when this evidence does
             not match a supported CP Plus structure.
         """
-        assert evidence.source_path is not None  # enforced by callers
-        reader = open_reader(evidence.source_type, Path(evidence.source_path))
-        try:
-            parser = CPPlusParser(reader, source_evidence_id=evidence.evidence_id)
-            enumeration = parser.enumerate_recordings()
-            if enumeration.status in _UNSUPPORTED_STATUSES or not enumeration.recordings:
-                return None, None
+        parser = CPPlusParser(reader, source_evidence_id=evidence.evidence_id)
+        enumeration = parser.enumerate_recordings()
+        if enumeration.status in _UNSUPPORTED_STATUSES or not enumeration.recordings:
+            return None, None
 
-            cp_record = enumeration.recordings[0]
-            fields = to_recording_fields(cp_record)
+        cp_record = enumeration.recordings[0]
+        fields = to_recording_fields(cp_record)
 
-            recording = (
-                db.query(Recording).filter(Recording.recording_id == cp_record.recording_id).first()
-            )
-            if recording is None:
-                recording = Recording(evidence_id=evidence.id, **fields)
-                db.add(recording)
-            else:
-                # `fields` always carries `to_recording_fields`' own
-                # `None` placeholders for `_MEDIA_PROBE_OWNED_FIELDS`
-                # (CP Plus's container never carries them -- see that
-                # function's docstring) -- re-running enumeration (this
-                # method backs the plain `GET /evidence/{id}/recordings`
-                # route, which the frontend calls on every Evidence-tab
-                # view, not just once) must never blindly overwrite an
-                # already-extracted/-probed `Recording` row's real values
-                # with those placeholders. Phase 24.1 root cause: this
-                # silently discarded `extract_recording`'s own probed
-                # width/height/fps/duration_ms the moment an officer next
-                # opened the Evidence tab.
-                for key, value in fields.items():
-                    if key in _MEDIA_PROBE_OWNED_FIELDS:
-                        continue
-                    setattr(recording, key, value)
-            db.commit()
-            db.refresh(recording)
+        recording = (
+            db.query(Recording).filter(Recording.recording_id == cp_record.recording_id).first()
+        )
+        if recording is None:
+            recording = Recording(evidence_id=evidence.id, **fields)
+            db.add(recording)
+        else:
+            # `fields` always carries `to_recording_fields`' own
+            # `None` placeholders for `_MEDIA_PROBE_OWNED_FIELDS`
+            # (CP Plus's container never carries them -- see that
+            # function's docstring) -- re-running enumeration (this
+            # method backs the plain `GET /evidence/{id}/recordings`
+            # route, which the frontend calls on every Evidence-tab
+            # view, not just once) must never blindly overwrite an
+            # already-extracted/-probed `Recording` row's real values
+            # with those placeholders. Phase 24.1 root cause: this
+            # silently discarded `extract_recording`'s own probed
+            # width/height/fps/duration_ms the moment an officer next
+            # opened the Evidence tab.
+            for key, value in fields.items():
+                if key in _MEDIA_PROBE_OWNED_FIELDS:
+                    continue
+                setattr(recording, key, value)
+        db.commit()
+        db.refresh(recording)
 
-            EvidenceManager.confirm_vendor(
-                db,
-                evidence.id,
-                vendor="CP Plus",
-                identification_method=_CP_PLUS_IDENTIFICATION_METHOD,
-                confidence=_CP_PLUS_VENDOR_CONFIDENCE,
-            )
+        EvidenceManager.confirm_vendor(
+            db,
+            evidence.id,
+            vendor="CP Plus",
+            identification_method=_CP_PLUS_IDENTIFICATION_METHOD,
+            confidence=_CP_PLUS_VENDOR_CONFIDENCE,
+        )
 
-            RecordingManager._set_metadata(db, recording, "vendor", "CP Plus")
+        RecordingManager._set_metadata(db, recording, "vendor", "CP Plus")
+        RecordingManager._set_metadata(db, recording, "parser_version", cp_record.parser_version)
+        RecordingManager._set_metadata(
+            db, recording, "timestamp_status", cp_record.timestamp_status.value
+        )
+        if cp_record.timestamp_source is not None:
             RecordingManager._set_metadata(
-                db, recording, "parser_version", cp_record.parser_version
+                db, recording, "timestamp_source", cp_record.timestamp_source
+            )
+        if cp_record.raw_timestamp is not None:
+            RecordingManager._set_metadata(
+                db, recording, "raw_timestamp", str(cp_record.raw_timestamp)
+            )
+
+        header = parse_outer_header(reader)
+        descriptor = segment_descriptor_from_header(evidence.evidence_id, header)
+        return recording, descriptor
+
+    @staticmethod
+    def _try_hikvision_recording(db: Session, evidence: Evidence, reader: Any) -> Recording | None:
+        """Try Hikvision's sidecar-log-confirmed exported-clip identification against `reader`.
+
+        Unlike CP Plus, an exported Hikvision clip is already a standard,
+        `ffprobe`-readable container -- so `fields` here carries REAL
+        codec/container/width/height/fps/duration_ms values from a
+        read-only probe of the immutable source file itself, not `None`
+        placeholders (`app.adapters.hikvision.models.to_recording_fields`'
+        own docstring). Every field is therefore always overwritten on
+        update (no `_MEDIA_PROBE_OWNED_FIELDS` skip, unlike the CP Plus
+        path above) -- re-probing this evidence's own unchanging source
+        file is idempotent and, when it succeeds, always at least as
+        authoritative as whatever was stored before; a failed re-probe
+        (`value is None`) still never clobbers a previously-good value.
+
+        Returns:
+            The `Recording`, or `None` when this evidence is not a
+            sidecar-log-confirmed Hikvision export.
+        """
+        enumeration = HikvisionParser(
+            reader=reader, source_evidence_id=evidence.evidence_id
+        ).enumerate_recordings()
+        if (
+            enumeration.status != HikvisionClipIdentificationStatus.CONFIRMED_BY_EXPORT_LOG
+            or not enumeration.recordings
+        ):
+            return None
+
+        hik_record = enumeration.recordings[0]
+        fields = hikvision_to_recording_fields(hik_record)
+
+        recording = (
+            db.query(Recording).filter(Recording.recording_id == hik_record.recording_id).first()
+        )
+        if recording is None:
+            recording = Recording(evidence_id=evidence.id, **fields)
+            db.add(recording)
+        else:
+            for key, value in fields.items():
+                if value is None and key in _MEDIA_PROBE_OWNED_FIELDS:
+                    continue
+                setattr(recording, key, value)
+        db.commit()
+        db.refresh(recording)
+
+        EvidenceManager.confirm_vendor(
+            db,
+            evidence.id,
+            vendor="Hikvision",
+            identification_method=_HIKVISION_IDENTIFICATION_METHOD,
+            confidence=hik_record.confidence,
+        )
+
+        RecordingManager._set_metadata(db, recording, "vendor", "Hikvision")
+        RecordingManager._set_metadata(db, recording, "parser_version", hik_record.parser_version)
+        RecordingManager._set_metadata(
+            db, recording, "timestamp_source", hik_record.timestamp_source.value
+        )
+        sidecar = hik_record.identification.sidecar
+        if sidecar is not None:
+            if sidecar.device_serial is not None:
+                RecordingManager._set_metadata(
+                    db, recording, "hikvision_device_serial", sidecar.device_serial
+                )
+                EvidenceManager.confirm_device_serial(db, evidence.id, sidecar.device_serial)
+            RecordingManager._set_metadata(
+                db, recording, "hikvision_export_log_path", sidecar.source_path
+            )
+            if sidecar.export_timestamp is not None:
+                RecordingManager._set_metadata(
+                    db,
+                    recording,
+                    "hikvision_export_timestamp",
+                    sidecar.export_timestamp.isoformat(),
+                )
+        known_device = hik_record.identification.known_device
+        if known_device is not None:
+            # Only ever set for this project's one examiner-confirmed
+            # device serial -- see `HikvisionKnownDevice`'s own docstring.
+            # Never inferred for a confirmed-but-unrecognized serial.
+            RecordingManager._set_metadata(
+                db, recording, "hikvision_device_model", known_device.model
             )
             RecordingManager._set_metadata(
-                db, recording, "timestamp_status", cp_record.timestamp_status.value
+                db, recording, "hikvision_device_firmware", known_device.firmware
             )
-            if cp_record.timestamp_source is not None:
-                RecordingManager._set_metadata(
-                    db, recording, "timestamp_source", cp_record.timestamp_source
-                )
-            if cp_record.raw_timestamp is not None:
-                RecordingManager._set_metadata(
-                    db, recording, "raw_timestamp", str(cp_record.raw_timestamp)
-                )
+            RecordingManager._set_metadata(
+                db, recording, "hikvision_device_timezone", known_device.timezone
+            )
+        if hik_record.has_audio is not None:
+            RecordingManager._set_metadata(db, recording, "has_audio", str(hik_record.has_audio))
+        if hik_record.audio_codec is not None:
+            RecordingManager._set_metadata(db, recording, "audio_codec", hik_record.audio_codec)
 
-            header = parse_outer_header(reader)
-            descriptor = segment_descriptor_from_header(evidence.evidence_id, header)
-            return recording, descriptor
-        finally:
-            reader.close()
+        return recording
 
     # --- session linking ---------------------------------------------------
 
@@ -341,6 +490,16 @@ class RecordingManager:
         if not recording:
             raise ValueError(f"Recording with id {recording_id} not found")
 
+        vendor = (
+            db.query(RecordingMetadata)
+            .filter(
+                RecordingMetadata.recording_id == recording.id, RecordingMetadata.key == "vendor"
+            )
+            .first()
+        )
+        if vendor is not None and vendor.value == "Hikvision":
+            return RecordingManager._extract_hikvision_recording(db, recording)
+
         segments = RecordingManager._resolve_segments(db, recording)
 
         case = db.query(Case).filter(Case.id == recording.evidence.case_id).first()
@@ -471,6 +630,126 @@ class RecordingManager:
         RecordingManager._set_metadata(
             db, recording, "elementary_stream_artifact_id", str(stream_artifact.id)
         )
+        ffmpeg_version = get_ffmpeg_version()
+        if ffmpeg_version is not None:
+            RecordingManager._set_metadata(db, recording, "ffmpeg_version", ffmpeg_version)
+
+        db.commit()
+        db.refresh(recording)
+        return recording
+
+    @staticmethod
+    def _extract_hikvision_recording(db: Session, recording: Recording) -> Recording:
+        """Extract one Hikvision exported-clip recording's playable output.
+
+        Unlike CP Plus, an exported Hikvision clip is already a complete,
+        standard container -- no elementary-stream reassembly step exists
+        between the preserved evidence and FFmpeg.
+        `app.media.decoder.remux_container_to_mp4`/
+        `transcode_container_to_h264_aac_mp4` read directly from the
+        preserved source evidence file (see those functions' own
+        docstrings for why: FFmpeg's own demuxer already skips the file's
+        leading "IMKH" header and correctly decodes the underlying
+        MPEG-PS payload -- confirmed against real evidence).
+
+        Args:
+            db: Database session.
+            recording: The `Recording` to extract. Its `vendor`
+                `RecordingMetadata` entry must already be `"Hikvision"`
+                (checked by the caller, `extract_recording`).
+
+        Returns:
+            The updated `Recording`. Never raises for an FFmpeg-side
+            failure -- reported via `extraction_status`/
+            `extraction_warnings` metadata instead, matching
+            `extract_recording`'s own contract.
+
+        Raises:
+            ValueError: If the recording's source evidence cannot be
+                resolved.
+        """
+        evidence = recording.evidence
+        if evidence is None or not evidence.source_path:
+            raise ValueError(
+                f"Recording {recording.id}'s source evidence could not be resolved for extraction"
+            )
+        source_path = Path(evidence.source_path)
+
+        case = db.query(Case).filter(Case.id == evidence.case_id).first()
+        assert case is not None
+        relative_dir = f"{case.case_id}/{evidence.evidence_id}/recordings/{recording.recording_id}"
+
+        warnings: list[str] = []
+        extraction_status = "successful"
+
+        master_path = prepare_artifact_directory(f"{relative_dir}/master.mp4")
+        mux_result = remux_container_to_mp4(source_path, master_path)
+        master_artifact: Artifact | None = None
+        if mux_result.ok:
+            probe = probe_media(master_path)
+            if probe.available:
+                recording.codec = probe.codec
+                recording.container = "mp4"
+                recording.width = probe.width
+                recording.height = probe.height
+                recording.fps = probe.fps
+                if probe.duration_seconds is not None:
+                    recording.duration_ms = int(round(probe.duration_seconds * 1000))
+                warnings.extend(probe.warnings)
+            if mux_result.stderr.strip():
+                # A non-fatal ffmpeg-side warning (e.g. a tolerated PS-packet
+                # issue) can appear even on an otherwise-`ok` remux --
+                # surfaced, never discarded.
+                warnings.append(f"ffmpeg remux warning: {mux_result.stderr[-2000:]}")
+
+            master_artifact = EvidenceManager.register_artifact(
+                db,
+                recording.evidence_id,
+                ArtifactCreateRequest(
+                    relative_path=f"{relative_dir}/master.mp4",
+                    artifact_type="hikvision_export_master_mp4",
+                    size_bytes=master_path.stat().st_size,
+                    sha256=sha256_file(master_path),
+                    md5=md5_file(master_path),
+                    tool_version=get_ffmpeg_version(),
+                ),
+            )
+            recording.artifact_id = str(master_artifact.id)
+        else:
+            extraction_status = "failed"
+            warnings.append(f"ffmpeg remux to master MP4 failed: {mux_result.stderr[-2000:]}")
+
+        preview_path = prepare_artifact_directory(f"{relative_dir}/preview_h264.mp4")
+        transcode_result = transcode_container_to_h264_aac_mp4(source_path, preview_path)
+        if transcode_result.ok:
+            preview_artifact = EvidenceManager.register_artifact(
+                db,
+                recording.evidence_id,
+                ArtifactCreateRequest(
+                    relative_path=f"{relative_dir}/preview_h264.mp4",
+                    artifact_type="hikvision_export_preview_mp4",
+                    parent_artifact_id=master_artifact.id if master_artifact is not None else None,
+                    size_bytes=preview_path.stat().st_size,
+                    sha256=sha256_file(preview_path),
+                    md5=md5_file(preview_path),
+                    tool_version=get_ffmpeg_version(),
+                ),
+            )
+            RecordingManager._set_metadata(
+                db, recording, "preview_artifact_id", str(preview_artifact.id)
+            )
+        else:
+            if extraction_status == "successful":
+                extraction_status = "partial"
+            warnings.append(
+                f"ffmpeg transcode to H.264 preview MP4 failed: {transcode_result.stderr[-2000:]}"
+            )
+
+        db.commit()
+        db.refresh(recording)
+
+        RecordingManager._set_metadata(db, recording, "extraction_status", extraction_status)
+        RecordingManager._set_metadata(db, recording, "extraction_warnings", json.dumps(warnings))
         ffmpeg_version = get_ffmpeg_version()
         if ffmpeg_version is not None:
             RecordingManager._set_metadata(db, recording, "ffmpeg_version", ffmpeg_version)

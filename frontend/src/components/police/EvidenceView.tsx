@@ -22,6 +22,8 @@ const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   cp_plus_h264_preview_mp4: 'H.264 Browser Preview (derived)',
   cp_plus_hevc_elementary_stream: 'HEVC Elementary Stream (derived)',
   cp_plus_recovered_hevc_elementary_stream: 'Recovered HEVC Elementary Stream (derived)',
+  hikvision_export_master_mp4: 'Master MP4 (derived, remuxed from export)',
+  hikvision_export_preview_mp4: 'H.264 Browser Preview (derived)',
 };
 
 function usePreviewArtifactId(recordingId: number | null) {
