@@ -9,9 +9,15 @@ recovery logic, and persists the outcome as a `RecoveryResult` row plus a
 recovered-bytes `Artifact` (reusing `EvidenceManager.register_artifact` and
 the existing SHA-256/MD5 hashing — no new hashing/artifact code).
 
-Vendor dispatch is CP Plus-only and explicit, for the same reason
-`RecordingManager` already documents: no vendor is wired into
-`AdapterRegistry` via real device identification yet.
+Vendor dispatch is explicit, for the same reason `RecordingManager` already
+documents: no vendor is wired into `AdapterRegistry` via real device
+identification yet. CP Plus recordings run the four CP Plus layers below.
+Hikvision (Phase 26) recordings are exported clips: `run_recovery` branches to
+`_run_hikvision_recovery`, which feeds the SAME layered engine Hikvision's own
+truthful layers (deleted-recording search and damaged-segment recovery both
+`unsupported`, `not_supported_for_exported_media`; carving/fragment layers not
+attempted). Before this branch existed the orchestrator ran CP Plus's ADIT/CPAV
+engine against Hikvision files and persisted a misleading result.
 """
 
 from __future__ import annotations
@@ -33,6 +39,11 @@ from app.adapters.cp_plus.recovery import (
     reconstruct_cpv_fragments,
 )
 from app.adapters.cp_plus.session import segment_descriptor_from_header
+from app.adapters.hikvision.parser import PARSER_VERSION as HIKVISION_PARSER_VERSION
+from app.adapters.hikvision.recovery import (
+    find_deleted_hikvision_recordings,
+    recover_damaged_hikvision_segment,
+)
 from app.core.evidence_manager import EvidenceManager
 from app.core.recording_manager import RecordingManager
 from app.core.timestamp_manager import TimestampManager
@@ -82,6 +93,9 @@ class RecoveryManager:
         recording = db.query(Recording).filter(Recording.id == recording_id).first()
         if not recording:
             raise ValueError(f"Recording with id {recording_id} not found")
+
+        if RecordingManager.recording_vendor(db, recording) == "Hikvision":
+            return RecoveryManager._run_hikvision_recovery(db, recording)
 
         segments = RecordingManager._resolve_segments(db, recording)  # noqa: SLF001
         case = db.query(Case).filter(Case.id == recording.evidence.case_id).first()
@@ -162,6 +176,76 @@ class RecoveryManager:
             source_length=None,
             recovery_engine_version=RECOVERY_ENGINE_VERSION,
             parser_version=PARSER_VERSION,
+            notes=RecoveryManager._build_notes(engine_result.layers, final),
+        )
+        db.add(result)
+        db.commit()
+        db.refresh(result)
+        return result
+
+    @staticmethod
+    def _run_hikvision_recovery(db: Session, recording: Recording) -> RecoveryResult:
+        """Layered recovery for a Hikvision exported clip -- honestly `unsupported`.
+
+        An exported clip is one complete, already-exported recording: there is no
+        recording index or deletion marker to search (that needs a native
+        HDD/filesystem acquisition, not implemented), and no independent
+        damaged-segment recovery beyond what FFmpeg's own demuxer tolerates during
+        extraction. Nothing is recovered, so no artifact, fragment count, frame
+        count or confidence is recorded -- and none of CP Plus's ADIT/CPAV
+        machinery is run.
+        """
+        deleted = find_deleted_hikvision_recordings()
+        damaged = recover_damaged_hikvision_segment()
+
+        def vendor_layer() -> AdapterResult:
+            return AdapterResult(
+                vendor="Hikvision",
+                model=None,
+                firmware=None,
+                detected_format="hikvision-exported-clip",
+                capability_set=frozenset(),
+                recordings=[recording.recording_id],
+                metadata={"recovery_status": damaged.status.value},
+                recovery_candidates=[],
+                warnings=[damaged.reason],
+                parser_version=HIKVISION_PARSER_VERSION,
+                confidence=0.0,
+            )
+
+        engine_result = run_recovery_layers(
+            RecoveryLayerCallables(
+                filesystem_recovery=lambda: FilesystemRecoveryOutcome(
+                    status=deleted.status, reason=deleted.reason, recovered_recording_ids=[]
+                ),
+                vendor_recovery=vendor_layer,
+                # CP Plus-only layers (CPAV signature carving, counter-based segment
+                # linking) do not apply to a Hikvision export: left unsupplied so the
+                # engine reports them `not_attempted`, never fabricated.
+                carving=None,
+                fragment_reconstruction=None,
+            )
+        )
+        final = engine_result.final
+        result = RecoveryResult(
+            evidence_id=recording.evidence_id,
+            recording_id=recording.id,
+            artifact_id=None,
+            method=final.method.value,
+            status=final.status.value,
+            fragments_found=final.fragments_found,
+            fragments_used=final.fragments_used,
+            fragments_missing=final.fragments_missing,
+            frames_expected=None,
+            frames_recovered=final.frames_recovered,
+            recovery_rate=None,
+            timestamp_error=TimestampManager.resolve_timestamp_error(db, recording),
+            frame_continuity=final.frame_continuity,
+            confidence=final.confidence,
+            source_offset=None,
+            source_length=None,
+            recovery_engine_version=RECOVERY_ENGINE_VERSION,
+            parser_version=HIKVISION_PARSER_VERSION,
             notes=RecoveryManager._build_notes(engine_result.layers, final),
         )
         db.add(result)

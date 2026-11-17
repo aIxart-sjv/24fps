@@ -1,0 +1,44 @@
+# 24FPS Repository .gitignore
+
+# Large generated files exceeding GitHub's 100MB push limit
+codeboard.html
+
+# Local environment & secrets
+.env
+.env.local
+
+# Logs
+*.log
+backend/uvicorn.log
+frontend/vite.log
+
+# Python virtual environments & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+backend/.venv/
+backend/.venv.bak/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node dependencies & builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+
+# Local evidence data & SQLite databases
+backend/data/
+data/
+*.db
+*.db-journal
+
+# Operating system artifacts
+.DS_Store
+Thumbs.db

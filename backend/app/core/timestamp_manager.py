@@ -12,7 +12,7 @@ place vendor-specific timestamp-source knowledge lives (mirroring
 the pure engine underneath, `app.timeline.*`, has no vendor knowledge at
 all.
 
-Vendor dispatch is CP Plus-only and explicit, for the same reason
+Vendor dispatch is explicit (CP Plus, and since Phase 26 Hikvision), for the same reason
 `RecordingManager` already documents: no vendor is wired into
 `AdapterRegistry` via real device identification yet. For CP Plus, the
 one and only source classification implemented is `FILENAME_DERIVED` —
@@ -110,6 +110,15 @@ class TimestampManager:
             raise ValueError(f"Recording with id {recording_id} not found")
 
         source, source_note = TimestampManager._classify_source(db, recording)
+
+        if source_timezone is None:
+            # Only an examiner-confirmed Hikvision device (matched by serial in
+            # its export-log sidecar) carries a documented timezone; every other
+            # recording keeps the honest "timezone unknown" result. An explicit
+            # examiner-supplied `source_timezone` always takes precedence.
+            device_timezone = TimestampManager._confirmed_device_timezone(db, recording)
+            if device_timezone is not None:
+                source_timezone, source_timezone_basis = device_timezone
 
         # `start_original` is the anchor: any supplied reference pair is
         # matched against it alone. A single external reference
@@ -280,10 +289,39 @@ class TimestampManager:
                 "(Phase 8/9 contract); the CPV binary counter is never used as a normalization "
                 "input",
             )
+        if vendor == "Hikvision":
+            if (
+                TimestampManager._get_metadata_value(db, recording, "hikvision_timestamp_source")
+                == "filename_derived"
+            ):
+                return (
+                    TimestampSource.FILENAME_DERIVED,
+                    "Hikvision Recording.start_original is derived from the export filename "
+                    "('<channel>_<YYYYMMDDHHMMSS>.mp4'), end_original from start_original plus "
+                    "the measured stream duration; neither the file's Hikvision media header "
+                    "nor its payload carries a wall-clock time",
+                )
+            return (
+                TimestampSource.UNKNOWN,
+                "Hikvision recording start could not be derived: the export filename did not "
+                "match '<channel>_<YYYYMMDDHHMMSS>.mp4' and the file itself carries no "
+                "wall-clock time",
+            )
         return (
             TimestampSource.UNKNOWN,
             f"no timestamp-source classification is implemented for vendor {vendor!r}",
         )
+
+    @staticmethod
+    def _confirmed_device_timezone(db: Session, recording: Recording) -> tuple[str, str] | None:
+        """`(IANA zone, provenance basis)` recorded for an examiner-confirmed device, if any."""
+        zone = TimestampManager._get_metadata_value(db, recording, "hikvision_device_iana_timezone")
+        if zone is None:
+            return None
+        basis = TimestampManager._get_metadata_value(
+            db, recording, "hikvision_device_timezone_basis"
+        )
+        return zone, basis or "examiner-confirmed recorder timezone"
 
     @staticmethod
     def _combine_status(

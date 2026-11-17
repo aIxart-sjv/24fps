@@ -336,16 +336,24 @@ class HikvisionAdapter(DVRAdapter):
             "end; '.dav'/'.mav'/'.iav'/'.bin' export formats the recorder's own export UI "
             "offers are NOT_VALIDATED -- this adapter does not parse them and reports them "
             "as such rather than guessing",
-            "TRACK B: identification requires a same-stem '.txt'/'.docx' device export-log "
-            "sidecar corroborating the export filename convention; a Hikvision-compatible "
-            "MP4 with no such sidecar is reported as unconfirmed, never as a positive "
-            "Hikvision identification",
+            "TRACK B: the vendor is confirmed from the file's own Hikvision 'IMKH' media "
+            "header wrapping an MPEG-PS payload (confidence 0.9), or 1.0 with a same-stem "
+            "'.txt'/'.docx' export-log sidecar. Recorder MODEL/FIRMWARE/serial are known only "
+            "when such a sidecar names the one examiner-confirmed serial -- never from an MP4 "
+            "alone. A generic H.265 MP4 with neither the Hikvision header nor a sidecar is "
+            "not identified as Hikvision",
             "TRACK B: damaged-segment recovery and deleted-recording recovery are both "
             "UNSUPPORTED for exported media -- see app.adapters.hikvision.recovery module "
             "docstring",
             "TRACK B: the device's configured recording frame rate (15 fps) is never "
-            "substituted for the frame rate ffprobe actually measures on a given file -- "
-            "the two may legitimately differ per file",
+            "substituted for a measurement: on the real evidence the container DECLARES "
+            "avg 30 / r 25 fps but the video packet count measures ~15.00 fps, so "
+            "Recording.fps is the measured value and the declared rates are preserved as "
+            "recording metadata",
+            "TRACK B: a recording's wall-clock start comes only from the export filename "
+            "('<channel>_<YYYYMMDDHHMMSS>.mp4'); neither the Hikvision header nor the "
+            "payload carries one, and the recorder timezone is applied only for the "
+            "examiner-confirmed device",
         )
 
     def inspect_storage(self) -> AdapterResult:

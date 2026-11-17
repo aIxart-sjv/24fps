@@ -186,6 +186,39 @@ def test_enumerate_recordings_is_idempotent(db_session_and_engine):
     assert db.query(Recording).count() == 1
 
 
+def test_reenumeration_never_clobbers_normalization_or_recovery_owned_fields(
+    db_session_and_engine,
+):
+    """`to_recording_fields` always emits `None` placeholders for `start_normalized`/
+    `end_normalized`/`recovery_status`/`recovery_method` (enumeration never computes them --
+    `TimestampManager`/`RecoveryManager` do). The plain `GET /evidence/{id}/recordings` route
+    re-enumerates on every Evidence-tab view, so re-enumeration must not wipe what those
+    managers already stored (found via Hikvision: a timezone-normalized recording showed
+    "Normalized Start: unresolved" after one view; CP Plus shared the same update loop)."""
+    from datetime import datetime
+
+    db, evidence_root = db_session_and_engine
+    case = _make_case(db)
+    content = _synthetic_cpv_bytes(start_counter=1, end_counter=2, with_video=True)
+    evidence = _register_evidence(
+        db, case, evidence_root, "NVR_ch1_main_20260101120000_20260101120010.cpv", content
+    )
+    [recording] = RecordingManager.enumerate_recordings(db, evidence.id)
+
+    recording.start_normalized = datetime(2026, 1, 1, 6, 30, 0)
+    recording.end_normalized = datetime(2026, 1, 1, 6, 30, 10)
+    recording.recovery_status = "partial"
+    recording.recovery_method = "carving"
+    db.commit()
+
+    [again] = RecordingManager.enumerate_recordings(db, evidence.id)
+
+    assert again.id == recording.id
+    assert again.start_normalized == datetime(2026, 1, 1, 6, 30, 0)
+    assert again.end_normalized == datetime(2026, 1, 1, 6, 30, 10)
+    assert (again.recovery_status, again.recovery_method) == ("partial", "carving")
+
+
 def test_enumerate_recordings_returns_empty_for_non_cp_plus_evidence(db_session_and_engine):
     db, evidence_root = db_session_and_engine
     case = _make_case(db)

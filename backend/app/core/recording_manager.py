@@ -13,7 +13,7 @@ FFmpeg, and persists the result as `Recording`/`RecordingMetadata`/
 
 Vendor dispatch is explicit and try-in-order (`_ensure_segment_recording`
 tries CP Plus's binary "ADIT-v1" structure match first, then Hikvision's
-export-filename+sidecar-log identification, Phase 26) rather than routed
+media-header/export-log identification, Phase 26) rather than routed
 through `app.adapters.registry.AdapterRegistry`: nothing in
 `app.detection` can determine vendor from generic container inspection
 alone, so registry-based dispatch cannot yet select the right adapter
@@ -53,6 +53,7 @@ from app.adapters.cp_plus.session import (
 )
 from app.adapters.hikvision.models import HikvisionClipIdentificationStatus
 from app.adapters.hikvision.models import to_recording_fields as hikvision_to_recording_fields
+from app.adapters.hikvision.parser import PARSER_VERSION as HIKVISION_PARSER_VERSION
 from app.adapters.hikvision.parser import HikvisionParser
 from app.core.evidence_manager import EvidenceManager
 from app.hashing.md5 import md5_file
@@ -83,13 +84,12 @@ _UNSUPPORTED_STATUSES = frozenset({CPPlusParseStatus.UNKNOWN, CPPlusParseStatus.
 _CP_PLUS_VENDOR_CONFIDENCE = 1.0
 _CP_PLUS_IDENTIFICATION_METHOD = "cp_plus_structure_signature"
 
-#: Phase 26: identification method recorded on `Device.identification_method`
-#: once a Hikvision export filename + same-stem export-log sidecar have
-#: been positively cross-checked (`HikvisionClipIdentificationStatus.
-#: CONFIRMED_BY_EXPORT_LOG`) -- see `app.adapters.hikvision.parser`'s
-#: module docstring for why this, not an in-container signature, is this
-#: vendor's own strongest available identification evidence.
-_HIKVISION_IDENTIFICATION_METHOD = "hikvision_export_log_sidecar"
+#: Phase 26: `Device.identification_method` values for a confirmed Hikvision
+#: export -- the file's own Hikvision media header alone (a bare UI upload), or
+#: that plus a corroborating export-log sidecar (see
+#: `app.adapters.hikvision.parser`).
+_HIKVISION_IDENTIFICATION_METHOD_HEADER = "hikvision_container_header"
+_HIKVISION_IDENTIFICATION_METHOD_SIDECAR = "hikvision_export_log_sidecar"
 
 #: `RecordingMetadata.key` for the ordered, JSON-encoded list of
 #: `{"evidence_pk", "evidence_business_id", "segment_recording_id",
@@ -107,6 +107,18 @@ _SOURCE_SEGMENTS_KEY = "source_segments"
 #: placeholders.
 _MEDIA_PROBE_OWNED_FIELDS = frozenset(
     {"codec", "container", "width", "height", "fps", "duration_ms", "artifact_id"}
+)
+
+#: `Recording` columns that enumeration never computes: `TimestampManager` owns
+#: `start_normalized`/`end_normalized` and `RecoveryManager` owns
+#: `recovery_status`/`recovery_method`. Both vendors' `to_recording_fields`
+#: still emit `None` placeholders for them, and the plain
+#: `GET /evidence/{id}/recordings` route re-enumerates on every Evidence-tab
+#: view -- so an update must never write those placeholders over values those
+#: managers already stored (a timezone-normalized recording otherwise showed
+#: "Normalized Start: unresolved" after a single view).
+_NORMALIZATION_AND_RECOVERY_OWNED_FIELDS = frozenset(
+    {"start_normalized", "end_normalized", "recovery_status", "recovery_method"}
 )
 
 
@@ -131,8 +143,8 @@ class RecordingManager:
         Returns:
             The `Recording` rows discovered — empty (not an error) when
             this evidence does not match any supported vendor structure
-            (CP Plus's binary "ADIT-v1" signature, or Hikvision's export
-            filename + sidecar-log identification).
+            (CP Plus's binary "ADIT-v1" signature, or Hikvision's own media
+            header / export-log sidecar identification).
 
         Raises:
             ValueError: If evidence is not found or has no `source_path`.
@@ -222,7 +234,10 @@ class RecordingManager:
             # width/height/fps/duration_ms the moment an officer next
             # opened the Evidence tab.
             for key, value in fields.items():
-                if key in _MEDIA_PROBE_OWNED_FIELDS:
+                if (
+                    key in _MEDIA_PROBE_OWNED_FIELDS
+                    or key in _NORMALIZATION_AND_RECOVERY_OWNED_FIELDS
+                ):
                     continue
                 setattr(recording, key, value)
         db.commit()
@@ -256,98 +271,188 @@ class RecordingManager:
 
     @staticmethod
     def _try_hikvision_recording(db: Session, evidence: Evidence, reader: Any) -> Recording | None:
-        """Try Hikvision's sidecar-log-confirmed exported-clip identification against `reader`.
+        """Try Hikvision's exported-clip identification against `reader`.
 
-        Unlike CP Plus, an exported Hikvision clip is already a standard,
-        `ffprobe`-readable container -- so `fields` here carries REAL
-        codec/container/width/height/fps/duration_ms values from a
-        read-only probe of the immutable source file itself, not `None`
-        placeholders (`app.adapters.hikvision.models.to_recording_fields`'
-        own docstring). Every field is therefore always overwritten on
-        update (no `_MEDIA_PROBE_OWNED_FIELDS` skip, unlike the CP Plus
-        path above) -- re-probing this evidence's own unchanging source
-        file is idempotent and, when it succeeds, always at least as
-        authoritative as whatever was stored before; a failed re-probe
-        (`value is None`) still never clobbers a previously-good value.
+        Recognizes a clip from its own Hikvision media header (works for a bare
+        UI upload, which is stored as `<evidence_id>_<name>` with no sidecar) or
+        from a corroborating export-log sidecar -- see
+        `app.adapters.hikvision.parser`. A filename-only match is deliberately
+        NOT persisted: a filename can be anything.
+
+        Field ownership (the "enumeration clobbers probe-owned metadata" bug
+        class, `_MEDIA_PROBE_OWNED_FIELDS`): the source-file probe fills those
+        columns only while they are still empty. Once `extract_recording` has
+        populated them from the playable derived master (container `mp4`, the
+        master's fps), a later re-enumeration -- which the `/recordings` route
+        triggers on every Evidence-tab view -- must not overwrite them with the
+        SOURCE's values (container `mpeg`, and a declared fps that is wrong for
+        these files). The source's own facts are kept separately as
+        `source_*` recording metadata.
 
         Returns:
-            The `Recording`, or `None` when this evidence is not a
-            sidecar-log-confirmed Hikvision export.
+            The `Recording`, or `None` when this evidence is not a confirmed
+            Hikvision export.
         """
         enumeration = HikvisionParser(
             reader=reader, source_evidence_id=evidence.evidence_id
         ).enumerate_recordings()
-        if (
-            enumeration.status != HikvisionClipIdentificationStatus.CONFIRMED_BY_EXPORT_LOG
-            or not enumeration.recordings
-        ):
+        if not enumeration.status.is_confirmed or not enumeration.recordings:
             return None
 
         hik_record = enumeration.recordings[0]
+        identification = hik_record.identification
         fields = hikvision_to_recording_fields(hik_record)
 
+        # Scoped to THIS evidence: `recording_id` alone must never match another
+        # case's recording of the same clip.
         recording = (
-            db.query(Recording).filter(Recording.recording_id == hik_record.recording_id).first()
+            db.query(Recording)
+            .filter(
+                Recording.evidence_id == evidence.id,
+                Recording.recording_id == hik_record.recording_id,
+            )
+            .first()
         )
         if recording is None:
             recording = Recording(evidence_id=evidence.id, **fields)
             db.add(recording)
         else:
             for key, value in fields.items():
-                if value is None and key in _MEDIA_PROBE_OWNED_FIELDS:
+                if key in _NORMALIZATION_AND_RECOVERY_OWNED_FIELDS:
+                    continue
+                if key in _MEDIA_PROBE_OWNED_FIELDS and getattr(recording, key) is not None:
                     continue
                 setattr(recording, key, value)
         db.commit()
         db.refresh(recording)
 
+        via_sidecar = (
+            identification.status == HikvisionClipIdentificationStatus.CONFIRMED_BY_EXPORT_LOG
+        )
         EvidenceManager.confirm_vendor(
             db,
             evidence.id,
             vendor="Hikvision",
-            identification_method=_HIKVISION_IDENTIFICATION_METHOD,
+            identification_method=(
+                _HIKVISION_IDENTIFICATION_METHOD_SIDECAR
+                if via_sidecar
+                else _HIKVISION_IDENTIFICATION_METHOD_HEADER
+            ),
             confidence=hik_record.confidence,
         )
 
-        RecordingManager._set_metadata(db, recording, "vendor", "Hikvision")
-        RecordingManager._set_metadata(db, recording, "parser_version", hik_record.parser_version)
-        RecordingManager._set_metadata(
-            db, recording, "timestamp_source", hik_record.timestamp_source.value
-        )
-        sidecar = hik_record.identification.sidecar
-        if sidecar is not None:
-            if sidecar.device_serial is not None:
-                RecordingManager._set_metadata(
-                    db, recording, "hikvision_device_serial", sidecar.device_serial
-                )
-                EvidenceManager.confirm_device_serial(db, evidence.id, sidecar.device_serial)
-            RecordingManager._set_metadata(
-                db, recording, "hikvision_export_log_path", sidecar.source_path
+        set_meta = RecordingManager._set_metadata
+        set_meta(db, recording, "vendor", "Hikvision")
+        set_meta(db, recording, "parser_version", hik_record.parser_version)
+        set_meta(db, recording, "timestamp_source", hik_record.timestamp_source.value)
+        set_meta(db, recording, "hikvision_timestamp_source", hik_record.timestamp_source.value)
+        set_meta(db, recording, "hikvision_identification_status", identification.status.value)
+        set_meta(db, recording, "hikvision_identification_reason", identification.reason)
+        if hik_record.has_audio is not None:
+            set_meta(db, recording, "has_audio", str(hik_record.has_audio))
+        if hik_record.audio_codec is not None:
+            set_meta(db, recording, "audio_codec", hik_record.audio_codec)
+
+        # The SOURCE file's own probe facts, kept apart from the (possibly
+        # different, extraction-owned) columns above so nothing is hidden.
+        if hik_record.source_container is not None:
+            set_meta(db, recording, "source_container", hik_record.source_container)
+        if hik_record.declared_avg_frame_rate is not None:
+            set_meta(
+                db,
+                recording,
+                "source_declared_avg_frame_rate",
+                str(hik_record.declared_avg_frame_rate),
             )
+        if hik_record.declared_r_frame_rate is not None:
+            set_meta(
+                db, recording, "source_declared_r_frame_rate", str(hik_record.declared_r_frame_rate)
+            )
+        if hik_record.video_packet_count is not None:
+            set_meta(db, recording, "source_video_packet_count", str(hik_record.video_packet_count))
+        if hik_record.measured_fps is not None:
+            set_meta(db, recording, "source_measured_fps", str(hik_record.measured_fps))
+            declared = [
+                v
+                for v in (hik_record.declared_avg_frame_rate, hik_record.declared_r_frame_rate)
+                if v
+            ]
+            if any(
+                abs(v - hik_record.measured_fps) / hik_record.measured_fps > 0.05 for v in declared
+            ):
+                set_meta(
+                    db,
+                    recording,
+                    "source_frame_rate_discrepancy",
+                    f"container declares avg {hik_record.declared_avg_frame_rate} / r "
+                    f"{hik_record.declared_r_frame_rate} fps; measured "
+                    f"{hik_record.measured_fps} fps from {hik_record.video_packet_count} "
+                    "video packets (measured value used)",
+                )
+        header = identification.media_header
+        if header is not None:
+            set_meta(
+                db,
+                recording,
+                "hikvision_media_header",
+                json.dumps(
+                    {
+                        "version": header.version,
+                        "device_id": header.device_id,
+                        "system_format": header.system_format,
+                        "video_format": header.video_format,
+                        "audio_format": header.audio_format,
+                        "audio_channels": header.audio_channels,
+                        "audio_bits_per_sample": header.audio_bits_per_sample,
+                        "audio_sample_rate": header.audio_sample_rate,
+                        "ps_payload_offset": header.ps_payload_offset,
+                    }
+                ),
+            )
+        if hik_record.header_probe_consistency is not None:
+            set_meta(
+                db,
+                recording,
+                "hikvision_header_probe_consistency",
+                hik_record.header_probe_consistency,
+            )
+
+        sidecar = identification.sidecar
+        if sidecar is not None and sidecar.is_hikvision_copyright_banner_present:
+            set_meta(db, recording, "hikvision_export_log_path", sidecar.source_path)
+            if sidecar.device_serial is not None:
+                set_meta(db, recording, "hikvision_device_serial", sidecar.device_serial)
             if sidecar.export_timestamp is not None:
-                RecordingManager._set_metadata(
+                set_meta(
                     db,
                     recording,
                     "hikvision_export_timestamp",
                     sidecar.export_timestamp.isoformat(),
                 )
-        known_device = hik_record.identification.known_device
+        known_device = identification.known_device
         if known_device is not None:
-            # Only ever set for this project's one examiner-confirmed
-            # device serial -- see `HikvisionKnownDevice`'s own docstring.
-            # Never inferred for a confirmed-but-unrecognized serial.
-            RecordingManager._set_metadata(
-                db, recording, "hikvision_device_model", known_device.model
+            # Only ever for this project's one examiner-confirmed serial (see
+            # `HikvisionKnownDevice`); never inferred for an unrecognized one,
+            # and never from a header-only identification.
+            EvidenceManager.confirm_device_details(
+                db,
+                evidence.id,
+                serial_number=known_device.serial_number,
+                model=known_device.model,
+                firmware=known_device.firmware,
+                channel_count=known_device.channels,
             )
-            RecordingManager._set_metadata(
-                db, recording, "hikvision_device_firmware", known_device.firmware
+            set_meta(db, recording, "hikvision_device_model", known_device.model)
+            set_meta(db, recording, "hikvision_device_firmware", known_device.firmware)
+            set_meta(db, recording, "hikvision_device_timezone", known_device.timezone)
+            set_meta(db, recording, "hikvision_device_iana_timezone", known_device.iana_timezone)
+            set_meta(db, recording, "hikvision_device_timezone_basis", known_device.timezone_basis)
+        elif sidecar is not None and sidecar.device_serial is not None:
+            # A genuine Hikvision device this project has not confirmed: record
+            # the serial (a fact read from the sidecar), claim nothing else.
+            EvidenceManager.confirm_device_details(
+                db, evidence.id, serial_number=sidecar.device_serial
             )
-            RecordingManager._set_metadata(
-                db, recording, "hikvision_device_timezone", known_device.timezone
-            )
-        if hik_record.has_audio is not None:
-            RecordingManager._set_metadata(db, recording, "has_audio", str(hik_record.has_audio))
-        if hik_record.audio_codec is not None:
-            RecordingManager._set_metadata(db, recording, "audio_codec", hik_record.audio_codec)
 
         return recording
 
@@ -490,14 +595,7 @@ class RecordingManager:
         if not recording:
             raise ValueError(f"Recording with id {recording_id} not found")
 
-        vendor = (
-            db.query(RecordingMetadata)
-            .filter(
-                RecordingMetadata.recording_id == recording.id, RecordingMetadata.key == "vendor"
-            )
-            .first()
-        )
-        if vendor is not None and vendor.value == "Hikvision":
+        if RecordingManager.recording_vendor(db, recording) == "Hikvision":
             return RecordingManager._extract_hikvision_recording(db, recording)
 
         segments = RecordingManager._resolve_segments(db, recording)
@@ -639,6 +737,23 @@ class RecordingManager:
         return recording
 
     @staticmethod
+    def recording_vendor(db: Session, recording: Recording) -> str | None:
+        """The vendor a recording's parser confirmed (its `vendor` metadata entry).
+
+        The one place extraction and recovery dispatch on, so a vendor-specific
+        pipeline (CP Plus's proprietary-container reconstruction, Hikvision's
+        direct remux) is never applied to another vendor's recording.
+        """
+        entry = (
+            db.query(RecordingMetadata)
+            .filter(
+                RecordingMetadata.recording_id == recording.id, RecordingMetadata.key == "vendor"
+            )
+            .first()
+        )
+        return entry.value if entry is not None else None
+
+    @staticmethod
     def _extract_hikvision_recording(db: Session, recording: Recording) -> Recording:
         """Extract one Hikvision exported-clip recording's playable output.
 
@@ -738,6 +853,19 @@ class RecordingManager:
             RecordingManager._set_metadata(
                 db, recording, "preview_artifact_id", str(preview_artifact.id)
             )
+            # The browser plays THIS file. If its video track starts after the
+            # container timeline's zero (here the source's audio leads video by
+            # ~0.2 s), the player must add that offset to `frame / fps` to land
+            # on the intended frame -- measured from the served artifact, never
+            # assumed (0 for CP Plus, whose derived media is video-only).
+            preview_probe = probe_media(preview_path)
+            if preview_probe.available and preview_probe.video_start_offset_seconds is not None:
+                RecordingManager._set_metadata(
+                    db,
+                    recording,
+                    "preview_video_start_offset_seconds",
+                    f"{preview_probe.video_start_offset_seconds:.6f}",
+                )
         else:
             if extraction_status == "successful":
                 extraction_status = "partial"
@@ -753,6 +881,36 @@ class RecordingManager:
         ffmpeg_version = get_ffmpeg_version()
         if ffmpeg_version is not None:
             RecordingManager._set_metadata(db, recording, "ffmpeg_version", ffmpeg_version)
+        # Provenance (task: operation, parameters, adapter + version): exactly what was done to
+        # the preserved source to produce each derived artifact, incl. that only the VIDEO is
+        # byte-preserved -- the audio must be re-encoded (G.711 mu-law has no MP4 tag).
+        RecordingManager._set_metadata(
+            db,
+            recording,
+            "extraction_parameters",
+            json.dumps(
+                {
+                    "adapter": "Hikvision",
+                    "adapter_version": HIKVISION_PARSER_VERSION,
+                    "source": "preserved evidence file, opened read-only by FFmpeg",
+                    "master_artifact": {
+                        "operation": "container remux",
+                        "video": "stream copy (-c:v copy): original HEVC bytes preserved",
+                        "audio": "re-encoded to AAC (lossy; source pcm_mulaw cannot be stored in MP4)",
+                        "ffmpeg_args": "-c:v copy -c:a aac -b:a 48k -movflags +faststart",
+                    },
+                    "preview_artifact": {
+                        "operation": "transcode for browser playback (NOT the forensic record)",
+                        "video": "re-encoded to H.264 (libx264 -crf 23 -preset veryfast)",
+                        "audio": "re-encoded to AAC (lossy)",
+                        "ffmpeg_args": (
+                            "-c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 48k "
+                            "-movflags +faststart"
+                        ),
+                    },
+                }
+            ),
+        )
 
         db.commit()
         db.refresh(recording)

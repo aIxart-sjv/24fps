@@ -56,13 +56,19 @@ const AcquisitionForEvidence: React.FC<{ evidenceId: number; label: string }> = 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             ['Vendor', device.vendor ?? 'unknown'],
+            // Only ever populated when the backend independently confirmed them (e.g. a Hikvision
+            // export-log serial matching an examiner-confirmed recorder); otherwise honestly absent.
+            ['Model', device.model ?? 'Not available'],
+            ['Firmware', device.firmware ?? 'Not available'],
+            ['Serial Number', device.serial_number ?? 'Not available'],
+            ['Channels', device.channel_count !== null ? String(device.channel_count) : 'Not available'],
             ['Device Type', device.device_type ?? 'unknown'],
             ['Identification Method', device.identification_method ?? 'unknown'],
             ['Confidence', device.confidence !== null ? `${Math.round((device.confidence ?? 0) * 100)}%` : '—'],
           ].map(([k, v]) => (
             <div key={k} className="bg-neutral-900 border border-neutral-800 rounded p-3 text-left">
               <div className="text-[10px] font-mono text-neutral-400 uppercase">{k}</div>
-              <div className="text-sm font-bold font-mono text-neutral-100 mt-1">{v}</div>
+              <div className="text-sm font-bold font-mono text-neutral-100 mt-1 break-all">{v}</div>
             </div>
           ))}
         </div>

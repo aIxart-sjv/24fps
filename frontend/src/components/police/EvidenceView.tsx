@@ -7,7 +7,14 @@ import { StatusBadge, LoadingState, ErrorState, EmptyState } from '../common/Com
 import { SubmitEvidenceModal } from './SubmitEvidenceModal';
 import { Plus, Search, Layers, ShieldCheck, FileVideo, RefreshCw, X } from 'lucide-react';
 import type { RecordingResponse } from '../../lib/apiTypes';
-import { hasUsableBox, frameDistance, computeOverlayBoxRect } from '../../lib/videoMapping';
+import {
+  hasUsableBox,
+  frameDistance,
+  computeOverlayBoxRect,
+  parseVideoStartOffset,
+  videoElementTime,
+  videoRelativeTime,
+} from '../../lib/videoMapping';
 
 interface EvidenceViewProps {
   caseId: number;
@@ -26,12 +33,18 @@ const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   hikvision_export_preview_mp4: 'H.264 Browser Preview (derived)',
 };
 
-function usePreviewArtifactId(recordingId: number | null) {
+// What the player needs from `RecordingMetadata`: which derived artifact to play, and how far
+// into that file's container timeline its VIDEO track starts (see `videoElementTime`).
+function usePlaybackMetadata(recordingId: number | null) {
   return useApiQuery(() => {
     if (recordingId === null) return null;
     return recordingsApi.metadata(recordingId).then((entries) => {
-      const entry = entries.find((e) => e.key === 'preview_artifact_id');
-      return entry?.value ? Number(entry.value) : null;
+      const value = (key: string) => entries.find((e) => e.key === key)?.value ?? null;
+      const preview = value('preview_artifact_id');
+      return {
+        previewArtifactId: preview ? Number(preview) : null,
+        videoStartOffsetSeconds: parseVideoStartOffset(value('preview_video_start_offset_seconds')),
+      };
     });
   }, [recordingId]);
 }
@@ -51,7 +64,9 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
   const [showAllDetections, setShowAllDetections] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
-  const { data: previewArtifactId, loading: metaLoading } = usePreviewArtifactId(recording.id);
+  const { data: playback, loading: metaLoading } = usePlaybackMetadata(recording.id);
+  const previewArtifactId = playback?.previewArtifactId ?? null;
+  const videoStartOffset = playback?.videoStartOffsetSeconds ?? 0;
   const { data: aiResults } = useApiQuery(
     () => casesApi.aiResults(caseId, recording.id).catch(() => []),
     [caseId, recording.id]
@@ -77,7 +92,9 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
     if (pendingSeekSeconds === null || !video) return undefined;
 
     const applySeek = () => {
-      video.currentTime = pendingSeekSeconds;
+      // `pendingSeekSeconds` is relative to the first VIDEO frame; the element clock is on the
+      // container timeline, which the video track may start late on (audio-leads-video exports).
+      video.currentTime = videoElementTime(pendingSeekSeconds, videoStartOffset);
       consumePendingSeek();
     };
 
@@ -87,14 +104,16 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
     }
     video.addEventListener('loadedmetadata', applySeek, { once: true });
     return () => video.removeEventListener('loadedmetadata', applySeek);
-  }, [pendingSeekSeconds, consumePendingSeek, videoMounted]);
+  }, [pendingSeekSeconds, consumePendingSeek, videoMounted, videoStartOffset]);
 
   const validResults = useMemo(
     () => (aiResults ?? []).filter((r) => hasUsableBox(r.bbox)),
     [aiResults]
   );
 
-  const currentFrame = recording.fps ? Math.round(currentTime * recording.fps) : null;
+  // Frame math is relative to the first video frame, not the container clock.
+  const videoRelative = videoRelativeTime(currentTime, videoStartOffset);
+  const currentFrame = recording.fps ? Math.round(videoRelative * recording.fps) : null;
   const toleranceFrames = recording.fps ? Math.max(1, Math.round(recording.fps * FRAME_MATCH_TOLERANCE)) : null;
 
   const { boxes: displayedBoxes, primary: primaryBox } = useMemo(() => {
@@ -102,7 +121,7 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
     // "seconds" distance (scaled by fps||1, i.e. just seconds) otherwise
     // -- the tolerance below is expressed in the same matching unit.
     const tolerance = toleranceFrames !== null ? toleranceFrames : 0.75;
-    const nearby = validResults.filter((r) => frameDistance(r, currentFrame, currentTime, recording) <= tolerance);
+    const nearby = validResults.filter((r) => frameDistance(r, currentFrame, videoRelative, recording) <= tolerance);
     // Prefer an exact-frame match over a within-tolerance one (task:
     // "Prefer exact frame matching").
     const exact = currentFrame !== null ? nearby.filter((r) => r.frame_number === currentFrame) : [];
@@ -120,7 +139,7 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
       const allHighlighted = validResults.filter((r) => highlightedSet.has(r.id));
       if (allHighlighted.length === 0) return { boxes: [], primary: null };
       const nearest = allHighlighted.reduce((best, r) =>
-        frameDistance(r, currentFrame, currentTime, recording) < frameDistance(best, currentFrame, currentTime, recording)
+        frameDistance(r, currentFrame, videoRelative, recording) < frameDistance(best, currentFrame, videoRelative, recording)
           ? r
           : best
       );
@@ -128,7 +147,7 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
     }
 
     return { boxes: frameCandidates, primary: frameCandidates[0] ?? null };
-  }, [validResults, currentFrame, currentTime, recording, toleranceFrames, highlightedAiResultIds, showAllDetections]);
+  }, [validResults, currentFrame, videoRelative, recording, toleranceFrames, highlightedAiResultIds, showAllDetections]);
 
   if (metaLoading) return <LoadingState label="Loading recording…" />;
 
@@ -242,7 +261,7 @@ const RecordingPlayer: React.FC<{ recording: RecordingResponse; caseId: number }
             <div className="text-neutral-100">{primaryBox.track_id ?? 'n/a'}</div>
           </div>
           <div>
-            <div className="text-[9px] text-neutral-500 uppercase">Timestamp</div>
+            <div className="text-[9px] text-neutral-500 uppercase">Timestamp (normalized, UTC)</div>
             <div className="text-neutral-100">
               {primaryBox.timestamp ? new Date(primaryBox.timestamp).toLocaleTimeString() : 'unresolved'}
             </div>
@@ -321,6 +340,16 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ caseId }) => {
     () => (selectedEvidenceId !== null ? evidenceApi.artifacts(selectedEvidenceId) : null),
     [selectedEvidenceId]
   );
+  // Per-recording facts the backend derived from the evidence (measured frame rate discrepancy,
+  // timezone actually applied) and the real recovery outcome -- shown as-is, never inferred here.
+  const { data: recordingMetadata } = useApiQuery(
+    () => (selectedRecordingId !== null ? recordingsApi.metadata(selectedRecordingId) : null),
+    [selectedRecordingId]
+  );
+  const { data: recoveryResults } = useApiQuery(
+    () => (selectedEvidenceId !== null ? evidenceApi.recoveryResults(selectedEvidenceId) : null),
+    [selectedEvidenceId]
+  );
 
   useEffect(() => {
     if (recordings && recordings.length > 0 && selectedRecordingId === null) {
@@ -337,6 +366,12 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ caseId }) => {
 
   const selectedEvidence = (evidenceList ?? []).find((e) => e.id === selectedEvidenceId) ?? null;
   const selectedRecording = (recordings ?? []).find((r) => r.id === selectedRecordingId) ?? null;
+  const metaValue = (key: string): string | null =>
+    (recordingMetadata ?? []).find((e) => e.key === key)?.value ?? null;
+  // `recoveryResults` is newest-first, so the first match is the latest attempt.
+  const latestRecovery = selectedRecording
+    ? ((recoveryResults ?? []).find((r) => r.recording_id === selectedRecording.id) ?? null)
+    : null;
   // Explicitly matched by algorithm -- never assume list order, since a
   // hash list mixes SHA-256 and MD5 rows and this project's own rule is
   // "SHA-256 = primary integrity hash, MD5 = additional compatibility/
@@ -552,6 +587,17 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ caseId }) => {
                       </span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-neutral-400">Frame Rate (measured):</span>
+                      <span className="text-neutral-200 font-semibold">
+                        {selectedRecording.fps ? `${selectedRecording.fps.toFixed(2)} fps` : '—'}
+                      </span>
+                    </div>
+                    {metaValue('source_frame_rate_discrepancy') && (
+                      <div className="text-[10px] text-amber-400 leading-snug">
+                        Source header disagrees: {metaValue('source_frame_rate_discrepancy')}
+                      </div>
+                    )}
+                    <div className="flex justify-between">
                       <span className="text-neutral-400">Duration:</span>
                       <span className="text-neutral-200 font-semibold">
                         {selectedRecording.duration_ms ? `${(selectedRecording.duration_ms / 1000).toFixed(1)}s` : '—'}
@@ -564,11 +610,25 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ caseId }) => {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-neutral-400">Normalized Start:</span>
+                      <span className="text-neutral-400">Normalized Start (UTC):</span>
                       <span className="text-neutral-200 font-semibold">
                         {selectedRecording.start_normalized
                           ? new Date(selectedRecording.start_normalized).toLocaleString()
                           : 'unresolved'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-400">Source Timezone Applied:</span>
+                      <span className="text-neutral-200 font-semibold">
+                        {metaValue('timestamp_source_timezone') ?? 'not determined'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-400">Parse Confidence:</span>
+                      <span className="text-neutral-200 font-semibold">
+                        {selectedRecording.confidence !== null
+                          ? `${Math.round(selectedRecording.confidence * 100)}%`
+                          : '—'}
                       </span>
                     </div>
                   </div>
@@ -579,20 +639,29 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ caseId }) => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-neutral-400">Status:</span>
-                      <StatusBadge status={selectedRecording.recovery_status ?? 'not_attempted'} />
+                      <StatusBadge
+                        status={selectedRecording.recovery_status ?? latestRecovery?.status ?? 'not_attempted'}
+                      />
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-neutral-400">Method:</span>
-                      <span className="text-neutral-200">{selectedRecording.recovery_method ?? '—'}</span>
+                      <span className="text-neutral-200">
+                        {selectedRecording.recovery_method ?? latestRecovery?.method ?? '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-neutral-400">Confidence:</span>
+                      <span className="text-neutral-400">Recovery Confidence:</span>
                       <span className="text-neutral-200">
-                        {selectedRecording.confidence !== null
-                          ? `${Math.round(selectedRecording.confidence * 100)}%`
+                        {latestRecovery?.confidence != null
+                          ? `${Math.round(latestRecovery.confidence * 100)}%`
                           : '—'}
                       </span>
                     </div>
+                    {latestRecovery?.status === 'unsupported' && latestRecovery.notes && (
+                      <div className="text-[10px] text-neutral-400 leading-snug line-clamp-4" title={latestRecovery.notes}>
+                        {latestRecovery.notes.split('\n')[0]}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

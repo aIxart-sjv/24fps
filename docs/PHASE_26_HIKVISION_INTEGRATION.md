@@ -1,280 +1,311 @@
-# Phase 26 — Hikvision Integration
+# Phase 26 — Hikvision Integration (repaired and re-validated)
+
+> **Validation scope: exactly one recorder.** Hikvision **DS-7A04HQHI-K1**
+> ("Embedded Net DVR"), firmware **V4.30.220, Build 220216**, serial
+> `0420220517CCWRJ98043179WCVU`. Nothing here is generalized to other Hikvision
+> models, firmware versions, export formats or products.
+>
+> **What 24FPS supports:** analysis of `.mp4` clips exported from that recorder
+> (which are Hikvision-header + MPEG-PS files, see §12) through the real
+> upload → process → play → seek → AI → report workflow.
+> **What it does not:** native Hikvision HDD/filesystem parsing, deleted-recording
+> recovery, and the recorder's other export formats — see §14/§15/§24.
+
+## 0. Why this document was rewritten
+
+The first Phase 26 delivery reported "complete" and passed its tests, but **did not
+work in the real application**. The user's own database showed it: three separate
+attempts to upload Hikvision clips ended with `Device.vendor = NULL`, the
+orchestrator's `enumeration` stage `skipped`, and **zero recordings** — so nothing
+downstream (extraction, playback, seek, timeline, AI) ever ran.
+
+**Why the tests did not catch it.** They copied a clip into a scratch evidence root
+under its *original filename*, put its `.txt` export-log *next to it*, and registered
+it *by path*. The real UI does none of that: it uploads **one file** through
+`POST /cases/{id}/evidence/upload`, which stores it as
+`<evidence_id>_<original filename>` and has no way to place a sidecar beside it. The
+tests proved the parser on ideal input, not the application.
+
+### Root causes found and fixed
+
+| # | Root cause | Evidence | Fix |
+|---|---|---|---|
+| 1 | **Identification required an exactly-anchored filename *and* a same-stem sidecar** — both impossible for a UI upload (`EV-XXXX_A01_2026….mp4`, no sidecar). Every real upload was rejected, so nothing ran. | User DB (evidence 8/11/12): vendor NULL, `enumeration: skipped`, 0 recordings; reproduced live over HTTP. | Identify from the file's **own Hikvision header** (`IMKH`, §12); tolerate the upload prefix; sidecar is optional corroboration. |
+| 2 | **Enumeration overwrote what extraction stored** (the "probe-owned field" bug class): after extraction `fps` went 15.0 → **30.0** and `container` `mp4` → `mpeg` on the next view of the Evidence tab. | Live: recording row after `GET /evidence/{id}/recordings`. | Probe-owned fields fill once, never overwritten; source facts kept separately as `source_*` metadata. |
+| 3 | **`start_normalized` was wiped on every view** (shared bug — **also affects CP Plus**): metadata said normalization succeeded (`Asia/Kolkata`) while the row read `NULL`. | Scratch DB after a UI session. | `start/end_normalized` and `recovery_*` are never written by enumeration (both vendors). |
+| 4 | **Recovery ran CP Plus's ADIT/CPAV engine on Hikvision files** and persisted a `RecoveryResult` citing "ADIT-v1", "CPAV record boundaries", `fragments_found: 1`, `confidence 0.5`. | Live `recovery-results`. | Vendor-aware branch: Hikvision layers only, honestly `unsupported` / `not_supported_for_exported_media`, no fragments/confidence/artifact. |
+| 5 | **Declared frame rate is wrong for these files.** Container says `avg 30/1`, `r 25/1`; counting packets gives **15.00 fps** (9016 frames / 601.0 s). | `ffprobe -count_packets` on all three clips. | `Recording.fps` = measured rate; declared rates preserved in metadata + a visible discrepancy note. |
+| 6 | **Seek landed 5–6 frames (0.24 s) early** and every overlay box was misplaced: the served preview's video track starts 0.2 s into the container (audio leads video in the source) but the UI assumed frame 0 ↔ `t=0`. | Measured in Brave via `requestVideoFrameCallback`. | Backend measures the played artifact's video start offset; the player adds it (per-clip: 0.200 s and 0.120 s measured). |
+| 7 | **Recording IDs were the file stem and looked up globally** — the same clip in two cases would silently hijack the other case's row. | Code review + test. | `HIKVISION-EXPORT-<evidence_id>`, lookup scoped to the evidence (like CP Plus's `CPPLUS-ADIT-V1-<evidence_id>`). |
+| 8 | **Timestamp source was `unknown` for Hikvision** ("no timestamp-source classification is implemented for vendor 'Hikvision'"); device model/firmware/serial never reached the `Device` row the UI reads; extraction "warnings" were an ffmpeg banner dump; the AAC encoder warned on every run (`64k` exceeds AAC-LC's 48 kbps ceiling at 8 kHz); the orchestrator told users only CP Plus was supported; an uploaded export-log was flagged as an unparseable DVR export. | Live data. | Each fixed (§13, §19, §22). |
+
+Also corrected: the first delivery's docstrings claimed the `IMKH` marker was
+"unattributable" and deliberately not used. That was wrong — see §12.
 
 ## 1. Validated device
 
-Hikvision **DS-7A04HQHI-K1** ("Embedded Net DVR"), serial
-`0420220517CCWRJ98043179WCVU`, hardware version `0xe9711`.
+Hikvision **DS-7A04HQHI-K1**, device name "Embedded Net DVR", hardware `0xe9711`,
+serial `0420220517CCWRJ98043179WCVU`, 4 channels, firmware **V4.30.220, Build 220216**.
+Confirmed from the recorder's own screens (photographed alongside the evidence).
 
-This validation scope is **exactly one device**. Nothing here should be
-read as "Hikvision fully supported" — see Section 22 ("Known limitations")
-and `app.adapters.hikvision`'s own module docstring, which spells out the
-same boundary in code.
+## 2. Model / 3. Firmware / 4. Channels
 
-## 2. Model
-
-`DS-7A04HQHI-K1`
-
-## 3. Firmware
-
-`V4.30.220, Build 220216`
-
-## 4. Channels
-
-4 total (camera `A1`/channel 1 and `A2`/channel 2 are represented in the
-real evidence set; channels 3–4 were not exercised).
+`DS-7A04HQHI-K1` / `V4.30.220, Build 220216` / 4. **These are asserted only when an
+export-log sidecar names the examiner-confirmed serial** (`KNOWN_HIKVISION_DEVICES`).
+An MP4 alone cannot prove them — the header carries no device id, model or serial
+(§12) — so a bare upload shows **"Not available"**, never a guessed model.
 
 ## 5. Resolution
 
-1920×1080 configured (main stream, continuous + event). `ffprobe`
-measures the encoded frame as 1920×1088 (HEVC macroblock padding to a
-16-pixel boundary) — this project reports the raw `ffprobe` value rather
-than "correcting" it to the configured 1080, consistent with never
-substituting a device-configured value for a measured one.
+Configured 1920×1080 (main stream, continuous + event). `ffprobe` measures the
+encoded frame as **1920×1088** on all three clips; the project reports the measured
+value and does not "correct" it.
 
 ## 6. FPS
 
-Device configured: 15 fps (main stream, continuous + event).
-**Measured** (`ffprobe`, all three real files): `avg_frame_rate` is
-`30/1`; `r_frame_rate` is `25/1`. These two ffprobe-reported rates
-disagree with each other and with the device's configured 15 fps. This
-project does not attempt to resolve or explain that discrepancy — it is
-recorded as an observed fact, and the code never hardcodes 15 (or 25, or
-30) as a substitute for whatever a given file's own `ffprobe` measurement
-reports.
+| | value |
+|---|---|
+| Recorder configured | 15 fps |
+| Container **declares** | `avg_frame_rate = 30/1`, `r_frame_rate = 25/1` (both wrong) |
+| **Measured** (video packets ÷ stream duration) | A01_20260829100000 **15.001** (9016 / 601.027 s); A01_20260831080000 **15.004** (6700 / 446.55 s); A02_20260831080000 **15.001** (9016 / 601.024 s) |
+
+Frame timestamps sit on a 25 Hz grid with alternating 40/80 ms gaps. `Recording.fps`
+is the measured rate; the declared rates and the packet count are preserved as
+`source_declared_avg_frame_rate` / `source_declared_r_frame_rate` /
+`source_video_packet_count` / `source_measured_fps` plus a
+`source_frame_rate_discrepancy` note the UI shows. 15, 25 and 30 are never hardcoded.
 
 ## 7. Codec
 
-H.265 / HEVC, Main profile, `yuv420p`, level 120. Audio: G.711 mu-law
-(`pcm_mulaw`), 8 kHz, mono.
+H.265/HEVC (Main, `yuv420p`, level 120); audio G.711 mu-law (`pcm_mulaw`), 8 kHz,
+mono, 64 kb/s.
 
-## 8. Timezone
+## 8. Timezone / 9. NTP
 
-`GMT+05:30` ("Madras, Bombay, ..."), confirmed from the device's own
-System Settings screen (photographed alongside the evidence set).
-Deliberately **not** baked into filename-derived timestamps — see
-Section 13.
-
-## 9. NTP configuration
-
-Enabled. Server `time.windows.com`, port `123`, 30-minute sync interval.
-NTP being enabled is recorded as configuration fact only; it is never
-treated as proof that any specific recorded timestamp is accurate (Phase
-26 task scope).
+`GMT+05:30` "(Madras, Bombay, …)", DST disabled. NTP enabled (`time.windows.com`,
+port 123, 30 min). **NTP being enabled is recorded as configuration only** — it does
+not verify any individual timestamp; normalization stays `unverified`.
 
 ## 10. Evidence files tested
 
-Real, controlled evidence at `~/Documents/24fps-evidence/Hikvision/`
-(outside the repository, read-only, never modified — verified by
-SHA-256 hash-stability tests before/after every parse pass):
+Real evidence at `~/Documents/24fps-evidence/Hikvision/` (read-only; SHA-256 verified
+unchanged by tests before/after every pass).
 
-| File | Size | Container (actual) | Sidecar |
-|---|---|---|---|
-| `A01_20260829100000.mp4` | 49,811,456 B | MPEG-PS (not ISOBMFF, despite `.mp4`) | `A01_20260829100000.txt` |
-| `A01_20260831080000.mp4` | 33,034,240 B | MPEG-PS | `A01_20260831080000.txt` (+ `_001.txt`) |
-| `A02_20260831080000.mp4` | 32,346,112 B | MPEG-PS | `A02_20260831080000.txt` (+ `_001.txt`, `.docx`) |
+| File | Size | Duration | Frames | Audio leads video by |
+|---|---|---|---|---|
+| `A01_20260829100000.mp4` | 49,811,456 B | 601.0 s | 9016 | 0.210 s |
+| `A01_20260831080000.mp4` | 33,034,240 B | 446.6 s | 6700 | 0.109 s |
+| `A02_20260831080000.mp4` | 32,346,112 B | 601.0 s | 9016 | 0.113 s |
 
-Also inspected (not directly used by the parser): nine device
-configuration/screenshot images confirming the device fact sheet above,
-and a `.docx` sidecar whose extracted text is identical to its
-same-stem `.txt` sidecar.
+Sidecars: a same-stem `.txt` for each (plus `_001.txt` extras and one `.docx` whose
+text equals its `.txt`); nine photographed recorder screens.
+
+**Independent timestamp check.** The camera's own burned-in OSD clock, read from the
+*source* files at +20 s, shows `29-08-2026 Sat 10:00:20`, `31-08-2026 Mon 08:00:20`
+and `31-08-2026 Mon 08:00:20` — matching each filename-derived start (10:00:00 /
+08:00:00 / 08:00:00) plus 20 s. So `start_original` = the first video frame's time on
+the recorder's local clock.
 
 ## 11. Supported media formats
 
-| Format | Status |
-|---|---|
-| `.mp4` (device-exported, MPEG-PS payload) | **SUPPORTED** — validated end to end against all three real files |
-| `.dav` / `.mav` / `.iav` | **UNSUPPORTED** — the recorder's export UI offers these; no parsing implemented, no evidence tested |
-| `.bin` | **UNSUPPORTED** — same |
-| `.avi`, `.jpg`, `.xls`, `.zip` (export UI combinations) | **UNSUPPORTED** — not evidence tested |
-| Native Hikvision HDD/filesystem (raw disk image) | **NOT_VALIDATED** — see Section 14 |
+| Format | 24FPS status | Actual test | Notes |
+|---|---|---|---|
+| `.mp4` (recorder export: Hikvision header + MPEG-PS, HEVC + G.711) | **SUPPORTED** (this recorder/firmware only) | 3 real clips uploaded through the real UI/HTTP, processed, played, sought, AI-analysed, reported | See §12 |
+| `.dav`, `.mav`, `.iav`, `.bin` | **UNSUPPORTED / NOT_VALIDATED** | none — no such files exist in this project | The recorder's export UI offers them; that is not support. Registering one yields no recordings and the `unsupported_format` finding. |
+| `.avi`, `.jpg`, `.xls`, `.zip` | **UNSUPPORTED** | none | Same. |
+| Native Hikvision HDD / filesystem image | **NOT_VALIDATED** | none — no raw HDD/image exists | §15 |
 
-The device's export UI offering a format is not treated as this project
-supporting it — only `.mp4` was actually tested and validated.
+## 12. Identification and metadata extraction
 
-## 12. Metadata extraction
+The evidence is **not** an ISOBMFF MP4. It is a 24-byte Hikvision media header at
+offset 0, zero padding (4532 / 7204 / 6940 bytes in the three files), then a standard
+MPEG-2 Program Stream. Decoding the header little-endian as Hikvision's public SDK
+struct `HIK_MEDIAINFO` (`media_fourcc` = `0x484B4D49` "HKMI", stored on disk as
+`IMKH`):
 
-Identification is **two-signal, sidecar-corroborated**, not an
-in-container magic byte:
+| field | value in all three files | ffprobe's *independent* reading of the payload |
+|---|---|---|
+| `system_format` | `0x0002` | MPEG-PS ✓ |
+| `video_format` | `0x0005` | hevc ✓ |
+| `audio_format` | `0x7110` | pcm_mulaw ✓ |
+| channels / sample rate | 1 / 8000 | mono / 8000 Hz ✓ |
 
-1. Export filename convention: `<channel>_<YYYYMMDDHHMMSS>.mp4`.
-2. A same-stem `.txt`/`.docx` device export-log sidecar (the DVR's own
-   generated export receipt) carrying a "Copyright Hikvision Digital
-   Technology Co., Ltd." banner and a
-   `User: <user> Date:DD/MM/YYYY Time: HH:MM:SS made video export from
-   device <serial>` line.
+Every field agrees with an independent decoder, so this is a structured header, not a
+coincidental byte pattern. The web search that attributed `HIK_MEDIAINFO`/`HKMI` to
+Hikvision's `plaympeg4.h` could not fetch the header text itself, so only the
+code↔codec pairings observed on real evidence are asserted (`OBSERVED_HEADER_CODE_MEANINGS`);
+other codes are reported raw. The remaining 232 bytes of the header region are zero:
+**it carries no timestamp and no device id/model/serial**, and the PS private-stream
+(0xBD) payloads are not readable.
 
-Both signals agreeing → `CONFIRMED_BY_EXPORT_LOG` (the strongest
-identification this project makes without a native filesystem
-acquisition). Filename alone (no sidecar, or a sidecar without the
-banner) → `FILENAME_PATTERN_ONLY`, never treated as a positive Hikvision
-identification. Neither → `UNSUPPORTED`.
+Identification, in order of strength (`HikvisionClipIdentificationStatus`):
 
-A real, deterministic 4-byte `"IMKH"` marker precedes the MPEG-PS payload
-at offset 0 in all three real files (confirmed by direct byte
-inspection). This project **deliberately does not use it for vendor
-identification** — no public documentation or reference implementation
-establishes it as Hikvision-specific (unlike Phase 19's
-`"HIKVISION@HANGZHOU"`, which two independent sources corroborate), and
-treating an unattributed byte pattern as proof of vendor origin is
-exactly the failure mode this project's rules forbid. `ffmpeg`/`ffprobe`
-already skip past it on their own demuxer probing, so it needs no special
-handling to decode — only to *identify*, and it is not used for that.
+1. `CONFIRMED_BY_EXPORT_LOG` (1.0) — filename matches `<channel>_<YYYYMMDDHHMMSS>.mp4`
+   (any `<evidence_id>_` upload prefix tolerated) **and** a `.txt`/`.docx` export log
+   with the "Copyright Hikvision Digital Technology" banner sits beside the clip
+   (exact stem, original stem, or `<evidence_id>_<original stem>` — i.e. the log
+   uploaded as its own evidence item). The only route to a serial → model/firmware.
+2. `CONFIRMED_BY_CONTAINER_HEADER` (**0.9**) — the file itself has the header + PS
+   payload. **Vendor only.** 0.5 if a decoded field contradicts ffprobe.
+3. `FILENAME_PATTERN_ONLY` (0.4) — never persisted as Hikvision.
+4. `UNSUPPORTED` — a generic MP4 (even named like a Hikvision export, even H.265) is
+   **not** identified as Hikvision.
 
-Once identified, technical metadata (codec, container, width, height,
-fps, duration, audio presence/codec) is read via a real, read-only
-`ffprobe` pass over the source evidence file itself
-(`app.media.media_probe.probe_media`), reusing the same infrastructure
-CP Plus's derived-artifact probing uses.
+Extracted and preserved: vendor, model/firmware/serial/channels (confirmed device only),
+camera/channel (`A01`/1), recording start (filename), end (start + measured duration),
+duration, codec, container, resolution, **measured** fps and the declared rates, audio
+presence/codec, decoded header, header↔ffprobe consistency, sidecar path/export time,
+hashes, and the extraction parameters (§19).
 
 ## 13. Timestamp normalization
 
-- `start_original`: parsed from the export filename convention
-  (`FILENAME_DERIVED`). The filename encodes no timezone; this project
-  does not attach one implicitly — the device's confirmed `GMT+05:30` is
-  supplied explicitly through the existing
-  `app.core.timestamp_manager.TimestampManager.normalize_recording` flow,
-  the same vendor-agnostic normalization architecture CP Plus uses. No
-  Hikvision-only timestamp code was added.
-- `end_original`: computed from `start_original` + the real, measured
-  stream duration (never itself parsed from the filename — the naming
-  convention encodes a start time only).
-- The sidecar's own `export_timestamp` (when present) is recorded
-  separately as **provenance** (`hikvision_export_timestamp` recording
-  metadata) — it is the export *action* time, never confused with the
-  recording's own start time.
+Uses the existing `TimestampManager`; no Hikvision-only engine.
+
+- `start_original`: from the filename, timezone-naive, source `filename_derived`
+  (previously `unknown`). `end_original` = start + measured duration.
+- Recorder timezone is applied **only** for the examiner-confirmed device (`Asia/Kolkata`
+  = fixed +05:30, with its provenance recorded); an examiner-supplied timezone always
+  wins. Result: `unverified`, method `timezone_conversion`
+  (08:00:00 IST → 02:30:00 UTC, verified in the UI).
+- A bare upload has no knowable timezone → normalization stays **`unknown`**, the
+  normalized columns stay empty, and the UI says "unresolved" / "not determined".
+- Originals are never overwritten (§0 root cause 3 fixed). The sidecar's export time is
+  recorded as provenance, never confused with the recording time.
+- The UI labels normalized times **UTC** (they are naive-UTC values).
 
 ## 14. Recovery capability
 
-- **Deleted-recording recovery**: `UNSUPPORTED`,
-  `not_supported_for_exported_media`. The evidence set is three
-  standalone exported clips — there is no HIKBTREE recording index or
-  deletion-marker structure to search (that requires a native
-  filesystem/HDD acquisition, not implemented — see Section 15).
-- **Damaged-segment recovery**: `UNSUPPORTED`, same reason code. No
-  independent PS-packet-level carving/reconstruction is implemented
-  beyond what FFmpeg's own demuxer already tolerates/reports during
-  remux (surfaced as extraction warnings, not a separate recovery
-  capability).
-- **Media extraction** (a distinct, real, working capability — not
-  "recovery"): `SUPPORTED`. See Section 19/final report.
+`UNSUPPORTED`, reason `not_supported_for_exported_media`, for both deleted-recording
+search and damaged-segment recovery: an exported clip has no recording index or deletion
+marker, and no independent PS-level carving exists beyond what FFmpeg tolerates during
+remux. The recovery card shows the real `RecoveryResult` (status `UNSUPPORTED`,
+recovery confidence `—`, no artifact, no fragments). **Media extraction** (remux +
+preview) is a separate, working capability and is not called "recovery".
 
-## 15. Native Hikvision HDD/filesystem forensics
+## 15. Native Hikvision HDD / filesystem forensics
 
-**NOT_VALIDATED.** Unchanged from Phase 19: `HikvisionAdapter`'s Track A
-(`inspect_storage`/`parse_filesystem`) still only recognizes the
-documented `"HIKVISION@HANGZHOU"` Master Sector marker within a bounded
-search window, built entirely from public research
-(`EvidenceBasis.PUBLIC_FORMAT_DOCUMENTATION`/
-`PUBLIC_REFERENCE_IMPLEMENTATION`), never validated against any real
-Hikvision HDD/disk image. No HIKBTREE recording index, embedded SQLite
-metadata database, or channel/timestamp structure is parsed. Phase 26's
-real evidence is exported-media only and does not change this.
+**NOT_VALIDATED.** Only the Phase 19 `HIKVISION@HANGZHOU` Master Sector marker is
+recognized, from public research; no HIKBTREE index, embedded SQLite or deleted-record
+structure is parsed; nothing was tested against a real disk image.
+Exported-media analysis, native filesystem parsing, deleted-file recovery and fragment
+reconstruction are four different things; only the first exists.
 
 ## 16. AI compatibility
 
-Once a Hikvision export is remuxed into a standard MP4 by
-`app.media.decoder.remux_container_to_mp4`, it flows through the exact
-same common recording pipeline CP Plus's own derived MP4 does — no
-Hikvision-specific AI code exists or was added. YOLO/YuNet/ByteTrack/
-motion detection/visual attribute search operate on the normalized
-recording exactly as before. Visual search continues to report appearance
-matches (timestamp, frame, bounding box) — never an identity claim.
+Verified through the **real UI**: object + motion detection ran on the derived MP4 (165 s;
+738 persons, cars, motorcycles… at 1 fps sampling); YOLOv8n + YuNet on `cuda:0`; results
+list, click-to-seek and overlays work. Visual search "red shirt person" ran
+(`deterministic_hsv_color_attribute_match`, 738 detections examined, 96 sightings) and
+carries the disclaimer *"not identity recognition. Appearance similarity is evidence, not
+proof"*. No Hikvision-specific AI code exists. Tracking was not exercised here.
 
 ## 17. Exact-seek behavior
 
-`start_original` (filename-derived) + measured stream duration gives an
-absolute wall-clock window for the recording, consistent with the
-project's preferred `recording_start_timestamp + target_event_timestamp`
-seek strategy. No fallback to `frame_number / fps` was needed for this
-evidence set (each exported file is a single continuous recording with a
-known start), and the device's configured 15 fps is never hardcoded — the
-`fps` value used anywhere in the pipeline is always what `ffprobe`
-measured on that specific file (see Section 6 for the observed
-frame-rate ambiguity).
+Preferred: absolute detection timestamp − recording start (needs normalized time).
+Fallback: `frame_number / fps` with the **measured** fps. Both are relative to the first
+video frame, so the player adds the played file's measured video start offset
+(`preview_video_start_offset_seconds`, e.g. 0.200 s / 0.120 s).
+
+Measured in Brave with `requestVideoFrameCallback` (frame actually presented):
+
+| | frame shown vs intended |
+|---|---|
+| before the fix (`t = N/fps`) | **−5 frames (−0.24 s)**, −6 at the end |
+| after (`t = N/fps + offset`) | **−1 to −2 frames (0.04–0.08 s)** |
+
+Real UI clicks on detections: frame 180 → −2, 300 → −1, car@105 → −2 (clip A01), and
+225/360/510 → −1 each (clip A02, timestamp path). **Residual ≤ 2 frames** is the source's
+non-uniform frame timing (40/80 ms gaps on a 25 Hz grid), which `frame/fps` cannot
+represent: it deviates 0–0.127 s from true timestamps with no drift over the clip.
+Removing it would need per-frame timestamps in the API — not done.
 
 ## 18. Integrity
 
-Unchanged, common infrastructure: SHA-256 + MD5 via `app.hashing`, same
-as CP Plus. Verified specifically for Hikvision by tests that hash every
-real evidence file (and its sidecar) before and after a full parse/probe/
-extraction pass and assert the digests are identical.
+Unchanged common infrastructure (SHA-256 + MD5). Uploaded copies are byte-identical to
+the originals; `POST /evidence/{id}/verify` → `verified` for both algorithms; tests hash
+originals before/after.
 
 ## 19. Provenance
 
-Unchanged, common `app.core.provenance_manager` model. Every
-Hikvision-derived artifact (`hikvision_export_master_mp4`,
-`hikvision_export_preview_mp4`) is registered through
-`EvidenceManager.register_artifact` exactly as CP Plus's derived
-artifacts are, carrying source evidence, adapter/parser version
-(`app.adapters.hikvision.parser.PARSER_VERSION`), and FFmpeg tool
-version.
+Existing model. Artifacts carry `evidence_id` (source), `parent_artifact_id`
+(preview ← master), ffmpeg `tool_version`, SHA-256/MD5. New: `extraction_parameters`
+recording metadata — adapter + version, the exact operations, and the disclosure that
+**only the video is byte-preserved**: the master's audio is re-encoded to AAC 48k (mu-law
+has no MP4 tag) and the preview is an H.264 transcode ("NOT the forensic record").
+Orchestrator stage events do not carry tool/parameters for *any* vendor (CP Plus's are
+identical) — unchanged.
 
 ## 20. Audit
 
-Unchanged, common `app.audit`/`app.core.audit_chain_manager`. No
-Hikvision-specific audit system was created; evidence intake,
-identification, enumeration, extraction, and case-access operations for
-Hikvision evidence all flow through the same audit chain CP Plus's do.
+Existing chain; no Hikvision-specific audit. Verified `valid: true` over the Hikvision
+runs (18 events).
 
-## 21. Blockchain interaction
+## 21. Blockchain
 
-Unchanged, common `app.core.blockchain_manager`/`app.blockchain`. Only
-the cryptographic/audit-state representation is ever anchored — never the
-video itself. Hikvision evidence follows the identical
-hash → processing → audit-state → anchor model as CP Plus.
+**NOT_VALIDATED on a real chain.** This deployment has `BLOCKCHAIN_PROVIDER=none`:
+anchoring returns HTTP 503 and no anchor exists — none is claimed. A test creates and
+verifies an anchor for a Hikvision case with the in-memory `LocalTestBlockchainProvider`
+(not a blockchain transaction) to show the case participates in the existing flow
+unchanged; only the audit-state hash is anchored, never video.
 
 ## 22. Frontend integration
 
-No Hikvision-specific frontend was built. The existing, already
-vendor-generic components render Hikvision data automatically once the
-backend reports it:
+No Hikvision-specific UI; existing components, real backend data only.
 
-- `AdminOemSupport.tsx` (OEM/vendor support matrix) reads
-  `support_level`/`evidence_basis`/`capabilities`/`limitations` directly
-  from `AdapterRegistry.support_matrix()` — Hikvision's Phase 26 status
-  (Track A/B split) renders with zero frontend code changes.
-- `EvidenceView.tsx`'s derived-artifact label map gained two entries
-  (`hikvision_export_master_mp4`, `hikvision_export_preview_mp4`) so
-  Hikvision's derived master/preview files get the same
-  human-readable, "derived (not source)" labeling CP Plus's already had.
-  This was the only frontend change Phase 26 required.
-- Device/evidence/recording/timeline/AI/findings/report views are all
-  already vendor-neutral and required no changes.
+- Evidence tab: source→derived chain labels, **measured frame rate** + the declared-rate
+  discrepancy note, "Source Timezone Applied", "Parse Confidence" (moved out from under
+  the recovery heading), "Normalized Start (UTC)", and a recovery card that reads the
+  real `RecoveryResult`.
+- Acquisition tab: Vendor, **Model, Firmware, Serial, Channels** (`Not available` unless
+  confirmed), method, confidence.
+- Player: video-start-offset compensation for seek and overlay-frame matching.
+
+Verified end-to-end in a real browser (Brave 149): upload via the modal, "Run automatic
+processing", every tab, playback (H.264 + AAC, HTTP 206 range streaming, no console
+errors), detection click → seek → overlay, timeline, findings, report.
 
 ## 23. Validation level
 
-`SupportLevel.LEVEL_4_VALIDATED` for the exported-clip pathway ("Track
-B"), validated against exactly the device/firmware/evidence scope in
-Section 1, and `LEVEL_1_DETECTION` for the raw-filesystem pathway ("Track
-A", unchanged from Phase 19, public-research-basis only). The adapter
-reports the union honestly — `HikvisionAdapter.model_scope`/`.limitations`
-spell out, per capability, which track it belongs to; neither track's
-validation is generalized to the other, and Track B's validation is never
-generalized beyond the DS-7A04HQHI-K1/V4.30.220 scope.
+`SupportLevel.LEVEL_4_VALIDATED` for the exported-clip pathway ("Track B"), for the
+single device/firmware/evidence scope in §1. `LEVEL_1_DETECTION` for the raw-filesystem
+pathway ("Track A", unchanged, public-research only). Not generalized.
 
 ## 24. Known limitations
 
-- Validated against **one** device/firmware/evidence scope only (Section
-  1). No other Hikvision model/firmware/export-tool version has been
-  tested.
-- Only `.mp4` (MPEG-PS payload) exports are supported. `.dav`/`.mav`/
-  `.iav`/`.bin` and other export-UI format combinations are
-  `UNSUPPORTED` — not parsed, not tested.
-- Identification requires a same-stem `.txt`/`.docx` sidecar next to the
-  registered evidence file. A Hikvision-compatible `.mp4` with no
-  sidecar (or a sidecar an examiner did not preserve/register alongside
-  it) is reported as `FILENAME_PATTERN_ONLY`, never a confirmed
-  identification — this is a genuine capability gap for evidence acquired
-  without its sidecar, not a bug.
-- The observed `ffprobe` frame-rate ambiguity (`r_frame_rate=25/1` vs.
-  `avg_frame_rate=30/1`, neither matching the device's configured 15 fps)
-  is unresolved and undocumented by any consulted source — recorded as
-  an open question, not silently picked one way.
-- No native Hikvision HDD/filesystem forensics (deleted recordings,
-  HIKBTREE index, embedded SQLite metadata) — Section 15.
-- No damaged-segment or deleted-recording recovery for exported media —
-  Section 14.
-- Audio in the derived MP4 outputs is a lossy AAC transcode (G.711
-  mu-law has no MP4 container tag); only the video track is
-  byte-preserved (`-c:v copy`). This is disclosed in provenance/warnings,
-  never presented as a byte-identical audio original.
+- One recorder/firmware only; other Hikvision models, firmware and export tools untested.
+- Model/firmware/serial/channels need the export-log sidecar (beside the clip, or uploaded
+  as a second evidence item **before** processing). Linked by filename only. Uploaded
+  logs are recognized and not flagged; without one, the fields read "Not available".
+- Without the sidecar the recorder timezone is unknown → normalized times are `unknown`
+  (originals still shown; examiner can supply a timezone).
+- `.dav`/`.mav`/`.iav`/`.bin`/`.avi`/… unsupported; native HDD/deleted recovery not validated.
+- Seek is accurate to ≤ 2 frames (§17); the H.265 master often does not play in
+  browsers, so playback uses the H.264 preview (≈115 MB for 10 min).
+- Derived audio is lossy AAC; only video bytes are preserved in the master.
+- Blockchain not configured here; tracking and PDF visual content were not exercised in
+  the browser.
+
+## 25. Test evidence
+
+- **Backend:** 1283 passed, 5 skipped (pre-existing: this environment's pyewf build cannot
+  write E01 fixtures), `ruff` clean, `mypy` clean (276 source files). +61 tests over the
+  first delivery, including the CP Plus regression tests (all pass).
+  - `test_hikvision_upload_workflow_real_evidence_integration.py` (14): the **real UI path** —
+    single-file upload through `POST /cases/{id}/evidence/upload`, `POST /cases/{id}/process`,
+    then device, recordings, metadata, recovery, byte-range streaming, immutability,
+    provenance, and blockchain-manager participation, on real evidence, over HTTP.
+  - `test_hikvision_identification_and_pipeline.py` (43, synthetic bytes): header decode,
+    the "generic MP4 is never Hikvision" guard, prefix-tolerant filenames, sidecar
+    discovery (incl. `.docx` and prefixed uploads), recording-scoping, re-enumeration
+    field ownership (both vendors), recovery truthfulness, timezone handling, export-log
+    evidence.
+  - `test_media_probe.py` (+3), `test_recording_manager.py` (+1, CP Plus shared-bug regression).
+- **Frontend:** typecheck clean, 27 unit tests, production build OK.
+- **Database:** Alembic `d886e2345a1b (head)`, `alembic check`: no new operations; **no
+  migration needed** (no model changed).
+- **Real browser (Brave 149) end-to-end**, on isolated data: upload via the modal → "Run
+  automatic processing" → Evidence / Acquisition / Recovery / Timeline / AI / Findings →
+  playback → detection click → seek → overlay → JSON + PDF report; two scenarios (bare
+  clip; clip + its export log uploaded as a second evidence item).
+- Not tested: Firefox playback, Windows/packaged build, object tracking (ByteTrack), any
+  Hikvision hardware other than the one recorder, any real blockchain.

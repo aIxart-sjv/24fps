@@ -420,29 +420,38 @@ class EvidenceManager:
         return device
 
     @staticmethod
-    def confirm_device_serial(db: Session, evidence_id: int, serial_number: str) -> Device:
-        """Upsert `Device.serial_number` from a vendor-specific parser's own
-        positive identification (Phase 26).
+    def confirm_device_details(
+        db: Session,
+        evidence_id: int,
+        *,
+        serial_number: str | None = None,
+        model: str | None = None,
+        firmware: str | None = None,
+        channel_count: int | None = None,
+    ) -> Device:
+        """Upsert `Device.serial_number`/`model`/`firmware`/`channel_count` from a vendor-specific
+        parser's own positive identification (Phase 26).
 
-        Mirrors `confirm_vendor`'s established pattern (called once a
-        vendor-specific parser -- currently `RecordingManager`, for
-        Hikvision's export-log-sidecar-confirmed clips -- has positively
-        read a device serial number from real evidence, stronger than
-        `identify_device`'s generic container/filesystem tiers can ever
-        produce), but touches only `serial_number`, never `vendor`/
-        `identification_method`/`confidence` (those remain
-        `confirm_vendor`'s own responsibility, called separately).
+        Mirrors `confirm_vendor`'s established pattern (called by
+        `RecordingManager` once a vendor parser has positively read/confirmed
+        these from real evidence -- stronger than `identify_device`'s generic
+        container/filesystem tiers can ever produce), but touches only the
+        fields passed, never `vendor`/`identification_method`/`confidence`
+        (`confirm_vendor`'s own responsibility, called separately). A field left
+        `None` is left untouched, never blanked: pass only what the evidence
+        actually established. `model`/`firmware` are only ever passed for a
+        serial number this project examiner-confirmed
+        (`app.adapters.hikvision.models.KNOWN_HIKVISION_DEVICES`).
 
-        Idempotent, matching `identify_device`/`confirm_vendor`: safe to
-        call more than once against the same evidence.
+        Idempotent, matching `identify_device`/`confirm_vendor`.
 
         Args:
             db: Database session.
-            evidence_id: Primary key of the evidence this serial number was
-                read from.
-            serial_number: The device serial number, read verbatim from
-                real evidence (e.g. a device export-log sidecar) -- never
-                guessed.
+            evidence_id: Primary key of the evidence these were read from.
+            serial_number: Device serial, read verbatim from real evidence.
+            model: Recorder model, only when independently confirmed.
+            firmware: Recorder firmware, only when independently confirmed.
+            channel_count: Recorder channel count, only when independently confirmed.
 
         Returns:
             The persisted `Device` row.
@@ -451,7 +460,14 @@ class EvidenceManager:
         if device is None:
             device = Device(evidence_id=evidence_id)
             db.add(device)
-        device.serial_number = serial_number
+        if serial_number is not None:
+            device.serial_number = serial_number
+        if model is not None:
+            device.model = model
+        if firmware is not None:
+            device.firmware = firmware
+        if channel_count is not None:
+            device.channel_count = channel_count
         db.commit()
         db.refresh(device)
         return device

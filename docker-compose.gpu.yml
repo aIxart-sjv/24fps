@@ -1,0 +1,12 @@
+# NVIDIA GPU acceleration overlay for 24FPS
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+services:
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

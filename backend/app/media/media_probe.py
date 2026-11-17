@@ -36,6 +36,23 @@ class MediaProbeResult:
     fps: float | None = None
     warnings: list[str] = field(default_factory=list)
     raw: dict[str, Any] | None = None
+    #: The video stream's declared `r_frame_rate` (a timebase-grid guess by
+    #: ffprobe, not a measurement) -- kept separate from `fps`
+    #: (`avg_frame_rate`) so a caller can report a header discrepancy.
+    r_frame_rate: float | None = None
+    #: Only populated when `probe_media(..., count_packets=True)`: the
+    #: number of video packets ffprobe actually read (== frames for the
+    #: intra/inter-coded streams this project handles), and
+    #: `video_packet_count / video duration` -- a *measured* average frame
+    #: rate independent of whatever the container header declares.
+    video_packet_count: int | None = None
+    measured_fps: float | None = None
+    #: `video stream start_time - container start_time`, in seconds: how far
+    #: into the container's own timeline the first video frame sits. Non-zero
+    #: when another stream (e.g. audio) starts first. A browser's
+    #: `<video>.currentTime` runs on the container timeline, so frame N is
+    #: shown at `N / fps + video_start_offset_seconds`, not `N / fps`.
+    video_start_offset_seconds: float | None = None
 
 
 def _parse_frame_rate(value: str | None) -> float | None:
@@ -61,14 +78,21 @@ def _parse_frame_rate(value: str | None) -> float | None:
     return numerator / denominator
 
 
-def probe_media(path: Path, *, timeout: float | None = 30) -> MediaProbeResult:
+def probe_media(
+    path: Path, *, timeout: float | None = 30, count_packets: bool = False
+) -> MediaProbeResult:
     """Inspect a media file with `ffprobe` and report what it found.
 
     Args:
-        path: Path to the media file to probe (an already-produced
-            artifact, e.g. a muxed MP4 — this function never reads or
-            interprets preserved source evidence).
+        path: Path to the media file to probe -- normally an already-produced
+            artifact (e.g. a muxed MP4), but a source evidence file that is
+            already a standard container (Hikvision exports, Phase 26) may
+            also be probed: `ffprobe` opens its input read-only and never
+            writes to it.
         timeout: Maximum seconds to allow `ffprobe` to run.
+        count_packets: Also read every video packet header (`-count_packets`;
+            no decoding) so `video_packet_count`/`measured_fps` are populated.
+            Costs a full pass over the file's packet headers, so it is opt-in.
 
     Returns:
         A `MediaProbeResult`. `available` is `False` (with the reason in
@@ -85,6 +109,7 @@ def probe_media(path: Path, *, timeout: float | None = 30) -> MediaProbeResult:
         "json",
         "-show_format",
         "-show_streams",
+        *(["-count_packets"] if count_packets else []),
         str(path),
     ]
     try:
@@ -124,6 +149,33 @@ def probe_media(path: Path, *, timeout: float | None = 30) -> MediaProbeResult:
     if video_stream is None:
         warnings.append("ffprobe found no video stream in this file")
 
+    video_packet_count: int | None = None
+    measured_fps: float | None = None
+    if count_packets and video_stream is not None:
+        try:
+            video_packet_count = int(video_stream["nb_read_packets"])
+        except (KeyError, TypeError, ValueError):
+            video_packet_count = None
+        stream_duration: float | None = None
+        for candidate in (video_stream.get("duration"), format_info.get("duration")):
+            try:
+                stream_duration = float(candidate) if candidate is not None else None
+            except (TypeError, ValueError):
+                stream_duration = None
+            if stream_duration:
+                break
+        if video_packet_count and stream_duration and stream_duration > 0:
+            measured_fps = video_packet_count / stream_duration
+
+    video_start_offset_seconds: float | None = None
+    if video_stream is not None:
+        try:
+            video_start_offset_seconds = float(video_stream["start_time"]) - float(
+                format_info["start_time"]
+            )
+        except (KeyError, TypeError, ValueError):
+            video_start_offset_seconds = None
+
     return MediaProbeResult(
         available=True,
         format_name=format_info.get("format_name"),
@@ -134,4 +186,8 @@ def probe_media(path: Path, *, timeout: float | None = 30) -> MediaProbeResult:
         fps=_parse_frame_rate(video_stream.get("avg_frame_rate")) if video_stream else None,
         warnings=warnings,
         raw=payload,
+        r_frame_rate=_parse_frame_rate(video_stream.get("r_frame_rate")) if video_stream else None,
+        video_packet_count=video_packet_count,
+        measured_fps=measured_fps,
+        video_start_offset_seconds=video_start_offset_seconds,
     )

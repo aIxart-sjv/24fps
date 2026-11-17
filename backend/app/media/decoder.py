@@ -158,7 +158,17 @@ def transcode_to_h264_mp4(
 #: original — while the video track is still a pure `-c:v copy` (the
 #: original compressed HEVC bytes, byte-for-byte, exactly like
 #: `mux_hevc_annexb_to_mp4` above for CP Plus).
-_HIKVISION_DEFAULT_AUDIO_BITRATE = "64k"
+#:
+#: 48k, not the source's 64 kb/s: AAC-LC allows at most 6144 bits per channel
+#: per 1024-sample frame, i.e. 48 kb/s at 8 kHz. Measured on real evidence,
+#: `-b:a 64k` makes the encoder warn "Too many bits 8192.000000 > 6144 per
+#: frame requested, clamping to max" on every extraction.
+_HIKVISION_DEFAULT_AUDIO_BITRATE = "48k"
+
+#: Only real warnings/errors on stderr. Without this FFmpeg writes its banner,
+#: input description, stream mapping and output metadata to stderr at the
+#: default `info` level -- which callers store verbatim as extraction warnings.
+_QUIET_ARGS = ["-hide_banner", "-loglevel", "warning"]
 
 
 def remux_container_to_mp4(
@@ -208,6 +218,7 @@ def remux_container_to_mp4(
     """
     return run_ffmpeg(
         [
+            *_QUIET_ARGS,
             "-y",
             "-i",
             str(source_path),
@@ -260,6 +271,7 @@ def transcode_container_to_h264_aac_mp4(
     """
     return run_ffmpeg(
         [
+            *_QUIET_ARGS,
             "-y",
             "-i",
             str(source_path),

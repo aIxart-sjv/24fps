@@ -3,7 +3,10 @@ import {
   computeOverlayBoxRect,
   frameDistance,
   hasUsableBox,
+  parseVideoStartOffset,
   resolveSeekSeconds,
+  videoElementTime,
+  videoRelativeTime,
   type BoundingBox,
 } from './videoMapping';
 import type { DisplayRect } from '../hooks/useVideoDisplayRect';
@@ -158,5 +161,43 @@ describe('computeOverlayBoxRect (source-frame pixels -> displayed video rectangl
     // Entirely outside the source frame on the right edge.
     const rect = computeOverlayBoxRect({ x_min: 2000, y_min: 2000, x_max: 2100, y_max: 2100 }, 1920, 1080, fullFrameRect);
     expect(rect).toBeNull();
+  });
+});
+
+
+describe('video start offset (A/V start offset in the played container)', () => {
+  it('parses the backend metadata value, treating anything unusable as 0', () => {
+    expect(parseVideoStartOffset('0.200000')).toBeCloseTo(0.2, 6);
+    expect(parseVideoStartOffset(null)).toBe(0);
+    expect(parseVideoStartOffset(undefined)).toBe(0);
+    expect(parseVideoStartOffset('')).toBe(0);
+    expect(parseVideoStartOffset('abc')).toBe(0);
+    expect(parseVideoStartOffset('-0.3')).toBe(0);
+    expect(parseVideoStartOffset('NaN')).toBe(0);
+  });
+
+  it('shifts a video-relative seek onto the container timeline and back', () => {
+    // Real Hikvision preview: video track starts 0.2 s into the container.
+    const seek = 9000 / 15.001156;
+    expect(videoElementTime(seek, 0.2)).toBeCloseTo(seek + 0.2, 9);
+    expect(videoRelativeTime(videoElementTime(seek, 0.2), 0.2)).toBeCloseTo(seek, 9);
+  });
+
+  it('is the identity when there is no offset (CP Plus video-only media)', () => {
+    expect(videoElementTime(12.5, 0)).toBe(12.5);
+    expect(videoRelativeTime(12.5, 0)).toBe(12.5);
+  });
+
+  it('clamps to 0 before the first video frame instead of going negative', () => {
+    expect(videoRelativeTime(0.1, 0.2)).toBe(0);
+  });
+
+  it('keeps the overlay frame index right: element time -> video-relative -> frame', () => {
+    const fps = 15.001156;
+    const frameN = 3000;
+    const elementTimeAfterSeek = videoElementTime(frameN / fps, 0.2);
+    // Without the correction the UI would compute frame ~3003 for this clock reading.
+    expect(Math.round(elementTimeAfterSeek * fps)).toBe(frameN + 3);
+    expect(Math.round(videoRelativeTime(elementTimeAfterSeek, 0.2) * fps)).toBe(frameN);
   });
 });

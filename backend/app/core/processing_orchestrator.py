@@ -80,10 +80,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.acquisition.native_export import NATIVE_EXPORT_SOURCE_TYPE
+from app.adapters.hikvision.parser import is_hikvision_export_log
 from app.audit import ActorType, ProcessingOperation
 from app.core.ai_manager import AIManager
 from app.core.audit_chain_manager import AuditChainManager
@@ -499,6 +501,27 @@ class ProcessingOrchestrator:
             # actually declared as a structured native export (task Phase
             # 22 scope, "Vendor Automation": a Level 1-only vendor must
             # not be silently treated as fully processed).
+            if evidence.source_type == NATIVE_EXPORT_SOURCE_TYPE and is_hikvision_export_log(
+                Path(evidence.source_path)
+            ):
+                # A recorder's export log is a supporting document that accompanies an
+                # exported clip (it is how a clip's recorder serial -> model is confirmed);
+                # it is not a recording, so "no recordings" is not a problem to flag.
+                status = ProcessingOrchestrator._finish_stage(
+                    db,
+                    job,
+                    root,
+                    status=JobStatus.SKIPPED,
+                    results_count=0,
+                    warnings=[
+                        "evidence is a Hikvision device export log (a supporting document, not a "
+                        "recording); it is used only to corroborate the identification of the "
+                        "exported clip it accompanies"
+                    ],
+                    operation=ProcessingOperation.PARSING,
+                    evidence_id=evidence.id,
+                )
+                return [], status
             if evidence.source_type == NATIVE_EXPORT_SOURCE_TYPE:
                 finding, is_new = FindingsEngine.upsert_finding(
                     db,
@@ -510,11 +533,14 @@ class ProcessingOrchestrator:
                     description=(
                         "This evidence item was registered as a native DVR/NVR export, but no "
                         "recordings could be enumerated from it. This backend currently "
-                        "validates structured recording enumeration for CP Plus evidence only "
-                        "(Master Specification Section 17/Phase 19 support matrix); other "
-                        "vendors or an unrecognized structure return no recordings rather than "
-                        "a fabricated result. Further extraction/recovery requires examiner "
-                        "review of this evidence's actual format."
+                        "validates structured recording enumeration for CP Plus native exports "
+                        "and for Hikvision exported clips (recognized by Hikvision's own media "
+                        "header or a corroborating export-log sidecar) only (Master "
+                        "Specification Section 17/Phase 19 support matrix); other vendors, other "
+                        "Hikvision export formats (.dav/.mav/.iav/.bin/...) or an unrecognized "
+                        "structure return no recordings rather than a fabricated result. Further "
+                        "extraction/recovery requires examiner review of this evidence's actual "
+                        "format."
                     ),
                     evidence_id=evidence.id,
                     source_job_id=job.id,

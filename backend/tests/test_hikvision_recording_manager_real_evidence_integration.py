@@ -9,7 +9,7 @@ synthetic bytes) that:
      export end to end and persists a `Recording` row with real
      `ffprobe`-measured technical metadata and Hikvision-specific
      provenance metadata (device serial/model/firmware, export-log path),
-  2. `EvidenceManager.confirm_vendor`/`confirm_device_serial` correctly
+  2. `EvidenceManager.confirm_vendor`/`confirm_device_details` correctly
      record "Hikvision" and the confirmed serial on `Device`,
   3. `RecordingManager.extract_recording` produces a real, playable
      derived MP4 via direct remux from the source evidence (no elementary-

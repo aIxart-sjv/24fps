@@ -173,19 +173,38 @@ class HikvisionDetectionResult:
 # the underlying MPEG-PS -- confirmed against all three real files (see
 # `app.media.decoder`).
 #
-# THIS "IMKH" MARKER IS DELIBERATELY *NOT* USED FOR VENDOR IDENTIFICATION:
-# nothing in this project's public research or reference sources documents
-# "IMKH" as a Hikvision-specific signature (unlike Phase 19's
-# "HIKVISION@HANGZHOU", which two independent sources corroborate). It may
-# be a generic export-muxer artifact shared by other tools/vendors --
-# treating it as proof of Hikvision origin would be exactly the "invent
-# field semantics from coincidental byte patterns" failure mode this
-# project's task scope explicitly forbids. This adapter instead identifies
-# an exported clip the way an examiner actually would: by cross-checking
-# the export filename convention against the device's own generated
-# export-log sidecar (`app.adapters.hikvision.parser.identify_exported_clip`)
-# -- see that module's docstring for the full mechanism and honesty levels
-# (`HikvisionClipIdentificationStatus`).
+# THE "IMKH" MARKER IS HIKVISION'S OWN FILE HEADER, AND IS THE PRIMARY
+# IDENTIFICATION SIGNAL (corrected in the Phase 26 repair -- the first
+# delivery wrongly dismissed it and depended on filename + sidecar instead,
+# neither of which the real single-file upload path can supply):
+#
+#   - The 4 bytes `49 4D 4B 48` read little-endian are 0x484B4D49, the ASCII
+#     tag "HKMI" -- the `media_fourcc` of Hikvision's public SDK structure
+#     `HIK_MEDIAINFO` (`plaympeg4.h`, PlayCtrl SDK; a web search attributes
+#     exactly this struct and value to that header -- the header text itself
+#     could not be fetched, so no constant *names* are asserted from it).
+#   - Decoding the 24-byte header as that struct (little-endian:
+#     fourcc, version, device_id, system_format, video_format,
+#     audio_format, audio_channels, audio_bits, audio_sample_rate,
+#     audio_bitrate) yields, for ALL THREE real files,
+#     system_format=2, video_format=5, audio_format=0x7110, channels=1,
+#     sample_rate=8000 -- which agree field-for-field with ffprobe's
+#     INDEPENDENT reading of the payload (MPEG-PS, hevc, pcm_mulaw, mono,
+#     8000 Hz). A coincidental byte pattern would not decode into values
+#     that all match an independent decoder. Only these observed
+#     code<->codec pairings are asserted (`OBSERVED_HEADER_CODE_MEANINGS`);
+#     any other code is reported raw, never guessed.
+#   - The remaining 232 bytes of the 256-byte header region are zero: the
+#     header carries NO timestamp and NO device id/model/serial. Those must
+#     come from elsewhere (original filename; export-log sidecar).
+#   - The MPEG-PS private-stream (0xBD) payloads that follow are not
+#     readable text (they look scrambled); no wall-clock time is
+#     recoverable from them by this project.
+#
+# Header-only identification therefore confirms "Hikvision-format export"
+# (vendor) at 0.9 confidence, and NEVER a model/serial/firmware. A
+# same-stem export-log sidecar, when present, upgrades it to 1.0 and is the
+# only source of the serial (-> `KNOWN_HIKVISION_DEVICES`).
 # ============================================================================
 
 
@@ -194,43 +213,83 @@ class HikvisionDetectionResult:
 # ============================================================================
 # Everything below is the second, real-evidence-backed track described in
 # this module's own docstring above: an already-exported Hikvision `.mp4`
-# clip (a standard container, not the raw proprietary filesystem
-# `HikvisionDetectionResult` above answers for), identified via the
-# device's own export-log sidecar file rather than any in-container magic
-# byte -- see `app.adapters.hikvision.parser`'s module docstring for why
-# no in-container Hikvision signature exists to check for a plain H.265/
-# MPEG-PS stream, and full evidence-basis citations for every field below.
+# clip (a standard PS container, not the raw proprietary filesystem
+# `HikvisionDetectionResult` above answers for). See
+# `app.adapters.hikvision.parser`'s module docstring for how it is identified
+# and `HikvisionClipIdentificationStatus` for the honesty levels.
+
+#: Hikvision `HIK_MEDIAINFO.media_fourcc` ("HKMI") as it appears on disk
+#: (little-endian dword 0x484B4D49).
+HIKVISION_MEDIA_HEADER_MAGIC = b"IMKH"
+
+#: `struct` format of the leading 24 bytes of the header (little-endian).
+HIKVISION_MEDIA_HEADER_STRUCT = "<IHHHHHBBII"
+HIKVISION_MEDIA_HEADER_SIZE = 24
+
+#: Standard MPEG-2 Program Stream pack-header start code (ISO/IEC 13818-1).
+MPEG_PS_PACK_START_CODE = b"\x00\x00\x01\xba"
+
+#: How far past offset 0 the PS payload's start code is searched for. Bounded
+#: (never "read until found"); the observed padding is 4532-7204 bytes.
+HIKVISION_PS_SEARCH_WINDOW = 65536
+
+#: Header code -> what ffprobe independently reported on the real evidence.
+#: ONLY pairings actually observed and cross-validated are listed; any other
+#: code is reported raw and never mapped.
+OBSERVED_HEADER_CODE_MEANINGS: dict[str, dict[int, str]] = {
+    "system_format": {0x0002: "mpeg"},  # ffprobe format_name: MPEG-PS
+    "video_format": {0x0005: "hevc"},  # ffprobe video codec_name
+    "audio_format": {0x7110: "pcm_mulaw"},  # ffprobe audio codec_name
+}
+
+
+@dataclass(frozen=True)
+class HikvisionMediaHeader:
+    """The decoded 24-byte Hikvision `HIK_MEDIAINFO`-style file header (see the
+    module-level comment above for the evidence basis of each field)."""
+
+    version: int
+    device_id: int
+    system_format: int
+    video_format: int
+    audio_format: int
+    audio_channels: int
+    audio_bits_per_sample: int
+    audio_sample_rate: int
+    audio_bitrate_field: int
+    #: Offset of the first MPEG-PS pack start code (00 00 01 BA), or `None` if
+    #: none was found within `HIKVISION_PS_SEARCH_WINDOW`.
+    ps_payload_offset: int | None
 
 
 class HikvisionClipIdentificationStatus(str, Enum):
     """Outcome of identifying whether an exported `.mp4` file is genuinely
     Hikvision evidence, as opposed to a generic H.265/H.264 media file
-    that merely happens to look compatible.
-
-    Deliberately does not mirror `HikvisionParseStatus`
-    (`SUPPORTED_VALID`/`UNSUPPORTED`/`UNKNOWN`): this is a *sidecar-log*
-    identification, not a structural container match, so the vocabulary
-    names that explicitly (task Phase 26 scope, section 7: "distinguish
-    between evidence that is actually associated with a confirmed
-    Hikvision device" and "a generic media file that merely looks
-    compatible").
+    that merely happens to look compatible (task Phase 26 scope, section 7).
     """
 
-    #: The filename matched the documented Hikvision channel-export naming
-    #: convention AND a sidecar export-log (`.txt`/`.docx`) was found,
-    #: read, and its own content corroborates this specific file (matching
-    #: device serial number, Hikvision copyright banner, an "made video
-    #: export" statement). The strongest identification this adapter can
-    #: make without a native filesystem/HDD acquisition.
+    #: A same-stem export-log sidecar (`.txt`/`.docx`) was found next to the
+    #: clip, carries the Hikvision copyright banner, and the filename matches
+    #: the export naming convention. Confidence 1.0. The only status that can
+    #: yield a serial number -> known-device model/firmware.
     CONFIRMED_BY_EXPORT_LOG = "confirmed_by_export_log"
-    #: The filename matches the naming convention, but no sidecar log could
-    #: be found/read/parsed to corroborate it -- this is NOT treated as
-    #: Hikvision-confirmed (task Phase 26 scope: never claim a recorder
-    #: model from generic H.265 metadata alone).
+    #: The file itself begins with Hikvision's own media header ("IMKH") and
+    #: wraps an MPEG-PS payload -- no sidecar needed. Confidence 0.9 (0.5 if a
+    #: decoded header field disagrees with ffprobe). Vendor only: never a
+    #: model, serial or firmware.
+    CONFIRMED_BY_CONTAINER_HEADER = "confirmed_by_container_header"
+    #: Only the filename matches the naming convention -- NOT treated as
+    #: Hikvision-confirmed (never claim a vendor from a filename alone).
     FILENAME_PATTERN_ONLY = "filename_pattern_only"
-    #: Neither the filename nor any sidecar log gives a Hikvision-specific
-    #: signal.
+    #: No Hikvision-specific signal at all.
     UNSUPPORTED = "unsupported"
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self in (
+            HikvisionClipIdentificationStatus.CONFIRMED_BY_EXPORT_LOG,
+            HikvisionClipIdentificationStatus.CONFIRMED_BY_CONTAINER_HEADER,
+        )
 
 
 @dataclass(frozen=True)
@@ -286,7 +345,16 @@ class HikvisionKnownDevice:
     model: str
     firmware: str
     channels: int
+    #: The device's own configured time zone label, as displayed on its
+    #: System Settings screen.
     timezone: str
+    #: IANA zone the normalization engine can resolve (`app.timeline.timezone`
+    #: only accepts IANA names) that is equivalent to `timezone` for this
+    #: device: the screen reads "(GMT+05:30) Madras, Bombay, ..." with DST
+    #: disabled, i.e. a fixed +05:30 -- India's `Asia/Kolkata` has no DST.
+    iana_timezone: str
+    #: Provenance carried into `timestamp_source_timezone_basis`.
+    timezone_basis: str
 
 
 #: The one Hikvision device this project has examiner-confirmed end to
@@ -303,6 +371,12 @@ KNOWN_HIKVISION_DEVICES: dict[str, HikvisionKnownDevice] = {
         firmware="V4.30.220, Build 220216",
         channels=4,
         timezone="GMT+05:30",
+        iana_timezone="Asia/Kolkata",
+        timezone_basis=(
+            "recorder System Settings screen: Time Zone '(GMT+05:30) Madras, Bombay...', "
+            "DST disabled (examiner-photographed alongside the evidence set). NTP is enabled "
+            "(time.windows.com, 30 min) but that does not verify any individual timestamp."
+        ),
     ),
 }
 
@@ -356,6 +430,9 @@ class HikvisionClipIdentificationResult:
     reason: str
     warnings: list[str] = field(default_factory=list)
     known_device: HikvisionKnownDevice | None = None
+    #: The decoded file header, when the file begins with Hikvision's "IMKH"
+    #: media header (independent of whether a sidecar also exists).
+    media_header: HikvisionMediaHeader | None = None
 
 
 @dataclass(frozen=True)
@@ -396,6 +473,18 @@ class HikvisionRecordingRecord:
     confidence: float
     warnings: list[str] = field(default_factory=list)
     timestamp_source: HikvisionClipTimestampSource = HikvisionClipTimestampSource.UNKNOWN
+    #: What the SOURCE file's own ffprobe pass reported, preserved verbatim
+    #: alongside the (possibly different) `fps`/`container` above, which are
+    #: what the recording row carries. For the real evidence the container
+    #: DECLARES avg 30 / r 25 fps but the packet count proves ~15 fps.
+    source_container: str | None = None
+    declared_avg_frame_rate: float | None = None
+    declared_r_frame_rate: float | None = None
+    video_packet_count: int | None = None
+    measured_fps: float | None = None
+    #: Human-readable per-field agreement between the decoded Hikvision header
+    #: and ffprobe (only for pairings observed on real evidence).
+    header_probe_consistency: str | None = None
 
 
 @dataclass(frozen=True)

@@ -54,6 +54,38 @@ export function resolveSeekSeconds(
   return null;
 }
 
+/**
+ * Parses the backend's `preview_video_start_offset_seconds` recording-metadata
+ * value: how far into the played file's container timeline its VIDEO track
+ * starts (non-zero when e.g. the audio track starts first, as in Hikvision
+ * exports). Anything absent/unparseable/negative is treated as 0 -- the value
+ * is only ever a correction, never a guess.
+ */
+export function parseVideoStartOffset(value: string | null | undefined): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * `<video>.currentTime` runs on the container timeline, while every
+ * frame -> seconds mapping in this module is relative to the FIRST VIDEO FRAME
+ * (frame 0 <-> 0 s). When the video track starts `offset` seconds into the
+ * container (audio leads), the element time that shows a video-relative
+ * moment is `videoRelativeSeconds + offset`. Measured in a real browser on
+ * real Hikvision evidence: seeking to `frame / fps` without this lands 4
+ * frames (0.2 s) early.
+ */
+export function videoElementTime(videoRelativeSeconds: number, videoStartOffsetSeconds: number): number {
+  return videoRelativeSeconds + videoStartOffsetSeconds;
+}
+
+/** Inverse of `videoElementTime`: the video-relative position for a `<video>`
+ * clock reading (clamped at 0 -- before the first video frame). */
+export function videoRelativeTime(elementTime: number, videoStartOffsetSeconds: number): number {
+  return Math.max(0, elementTime - videoStartOffsetSeconds);
+}
+
 /** A detection whose box is degenerate/out-of-bounds must be dropped, not
  * rendered (task: "If bounding box is malformed: do not crash"). */
 export function hasUsableBox(bbox: BoundingBox): boolean {
